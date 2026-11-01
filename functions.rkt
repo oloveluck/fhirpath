@@ -265,6 +265,14 @@
 (def! 'extension #:min 1 #:max 1 (lambda (s a e ev)
       (define url (str1 (car a)))
       (append-map (lambda (x) (filter (lambda (ex) (equal? (ext-url ex) url)) (get-extensions x))) s)))
+;; hasExtension(url): does the input carry an extension with this url? Not in the FHIRPath spec
+;; proper but used by FHIR-published SearchParameters (US Core `item-subject`) and supported by the
+;; reference engines; = extension(url).exists(), empty on an empty input.
+(def! 'hasExtension #:min 1 #:max 1 (lambda (s a e ev)
+      (define url (str1 (car a)))
+      (if (null? s) '()
+          (bool-coll (for/or ([x (in-list s)])
+                       (for/or ([ex (in-list (get-extensions x))]) (equal? (ext-url ex) url)))))))
 (def! 'defineVariable #:lazy? #t #:min 1 #:max 2
       (lambda (s a e ev)
         (define name (str1 (ev (car a) s (env-clone-vars e))))     ; name/value args are own scopes

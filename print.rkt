@@ -19,10 +19,10 @@
   (match ast
     [(fp-lit v) (lit->string v)]
     [(fp-invoke #f name) (symbol->string name)]
-    [(fp-invoke t name) (format "~a.~a" (fhirpath->string t) name)]
+    [(fp-invoke t name) (format "~a.~a" (wrap-target t) name)]
     [(fp-call #f name args) (format "~a(~a)" name (args->string args))]
-    [(fp-call t name args) (format "~a.~a(~a)" (fhirpath->string t) name (args->string args))]
-    [(fp-index t i) (format "~a[~a]" (fhirpath->string t) (fhirpath->string i))]
+    [(fp-call t name args) (format "~a.~a(~a)" (wrap-target t) name (args->string args))]
+    [(fp-index t i) (format "~a[~a]" (wrap-target t) (fhirpath->string i))]
     [(fp-binop op l r) (format "~a ~a ~a" (wrap l) (op->string op) (wrap r))]
     [(fp-unop op o) (format "~a~a" op (wrap o))]
     [(fp-typeop op o ty) (format "~a ~a ~a" (wrap o) op ty)]
@@ -31,6 +31,13 @@
     [_ (format "~a" ast)]))
 
 (define (wrap x) (if (fp-binop? x) (format "(~a)" (fhirpath->string x)) (fhirpath->string x)))
+;; the target of `.member`, `.f()` or `[i]` binds tighter than every operator, so an operator
+;; target must keep its parentheses: `(value as CodeableConcept).text` printed bare re-parses as
+;; the qualified TYPE `CodeableConcept.text`, and `(a | b).first()` as `a | b.first()`
+(define (wrap-target x)
+  (match x
+    [(or (fp-binop _ _ _) (fp-unop _ _) (fp-typeop _ _ _)) (format "(~a)" (fhirpath->string x))]
+    [_ (fhirpath->string x)]))
 (define fp-binop? (lambda (x) (match x [(fp-binop _ _ _) #t] [_ #f])))
 (define (args->string args) (string-join (map fhirpath->string args) ", "))
 (define (op->string op) (if (eq? op 'union) "|" (symbol->string op)))
@@ -56,6 +63,9 @@
   (check-equal? (roundtrip "item.answer.valueString") "item.answer.valueString")
   (check-equal? (roundtrip "a and b or c") "(a and b) or c")
   (check-equal? (roundtrip "name.where(use = 'official')") "name.where(use = 'official')")
+  (check-equal? (roundtrip "(Observation.value as CodeableConcept).text") "(Observation.value as CodeableConcept).text")
+  (check-equal? (roundtrip "(a | b).first()") "(a | b).first()")
+  (check-equal? (roundtrip "(-x).abs()") "(-x).abs()")
   ;; print∘parse is a fixpoint: re-parsing the printed text yields the same AST
   (for ([s '("linkId.value in ('patient.sex')" "%value + 5 days" "iif(x, 'a', 'b')")])
     (check-equal? (parse-fhirpath (fhirpath->string (parse-fhirpath s)))
