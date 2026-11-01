@@ -34,8 +34,11 @@
      (define type (fhir-type item))
      (cond
        [(fhir-has? item name) (listify (fhir-ref item name))]
-       ;; resource-root self-reference: `Patient.name` where the focus IS a Patient
-       [(eq? name type) (list item)]
+       ;; resource-root self-reference: `Patient.name` where the focus IS a Patient — or is a
+       ;; SUBTYPE of the named type: `Resource.meta.lastUpdated` / `DomainResource.text` on a
+       ;; Condition (FHIR's own SearchParameters and invariants are written this way)
+       [(or (eq? name type) (and (memq name (fhir-ancestors type)) (memq (quote Resource) (fhir-ancestors name))))
+        (list item)]
        ;; a leading resource-type name that doesn't match the context is a semantic error
        [(resource-type-name? name) (fp-error 'semantic (format "~a is not the context (~a)" name type))]
        [else

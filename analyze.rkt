@@ -20,6 +20,7 @@
                   fp-binop? fp-unop? fp-unop-operand
                   fp-typeop? fp-typeop-operand fp-typeop-type fp-var? fp-extern?)
          (only-in "navigate.rkt" all-schema-fields)
+         (only-in "types.rkt" fhir-ancestors)
          (only-in fhir/model/registry type-schema-of type-registered?)
          (only-in fhir/model/schema
                   type-schema-parent type-schema-fields schema-field-name schema-field-ftype
@@ -97,6 +98,7 @@
     [(memq T primitive-codes) #f]                       ; primitives: don't check members
     [(not (type-schema-of T)) #f]                       ; unknown/abstract type: don't check
     [(eq? name T) T]                                    ; resource-root self-reference
+    [(and (memq name (fhir-ancestors T)) (memq 'Resource (fhir-ancestors name))) T] ; Resource.meta on a Condition
     [(choice-base? name T) #f]                          ; polymorphic base -> unknown, allowed
     [(assq name (field-index T))
      => (lambda (entry)
