@@ -1,0 +1,13 @@
+UcumFunctionalTests.xml — the OFFICIAL UCUM functional test suite, vendored verbatim from
+https://raw.githubusercontent.com/FHIR/Ucum-java/master/src/test/resources/UcumFunctionalTests.xml
+retrieved 2026-08-24. Maintained by Grahame Grieve for unitsofmeasure.org; the file itself states
+the conformance rule ("You may declare conformance to these UCUM functional tests if your
+implementation accepts this file as an input, and passes ...").
+
+Sections: validation (529), displayNameGeneration (9), conversion (30), multiplication (2),
+division (3), history (5 — metadata, not cases). Run by fhirpath/tests/ucum-harness.rkt via
+`raco fhir ucum-tck`; floor ratcheted in fhirpath/tests/run-ucum.rkt.
+
+ALL SECTIONS PASS: 573/573. Display-name generation is derived from the essence's <name> data
+(prefix names compose with unit names, exponents render as " ^ n", and XML entities resolve so
+[degF]/A2 print correctly) — implemented as ucum-display in fhirpath/ucum.rkt.
