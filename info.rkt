@@ -1,12 +1,11 @@
 #lang info
 
-;; fhir-fhirpath — part of the `fhir` family of Racket packages (FHIR as a family of #langs).
-;; Every package in the family declares `(define collection "fhir")`, so they splice into the
-;; one `fhir` collection: module paths (fhir/...) and #lang names are the same as in the monorepo.
-
-(define collection "fhir")
-(define version "0.2")
-(define pkg-desc "FHIRPath for Racket: a from-scratch, TCK-complete engine (parser, evaluator, full UCUM, precision-aware decimals and temporals) over the fhir-core typed node model")
+(define collection "fhirpath")
+(define version "0.3")
+(define pkg-desc "FHIRPath for Racket: a from-scratch, TCK-complete engine (parser, evaluator, full UCUM, precision-aware decimals and temporals) over the fhir typed node model, with raco fhirpath")
 (define pkg-authors '(oloveluck))
-(define deps '("base" "fhir-core" "brag-lib" "br-parser-tools-lib"))
+(define license 'MIT)
+(define deps '("base" "fhir" "brag-lib" "br-parser-tools-lib"))
 (define build-deps '("rackunit-lib"))
+(define raco-commands '(("fhirpath" (submod fhirpath/cli main) "evaluate FHIRPath; run the official FHIRPath and UCUM conformance suites" #f)))
+(define test-omit-paths '("tests/vendor" "tests/inputs" "tests/inputs-r4"))

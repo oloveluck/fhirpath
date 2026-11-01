@@ -1,12 +1,13 @@
-# CLAUDE.md — fhir-fhirpath
+# CLAUDE.md — fhirpath
 
 Conventions, HTDP design style, and the conformance ratchet table live in the main `fhir` repo's
-CLAUDE.md (`~/Projects/fhir`); this file holds only the notes for this package. Cross-directory
-imports use collection paths (`fhir/model/node`, never `../model/node.rkt`): the family of packages
-splices into the one `fhir` collection, so a directory can move between repos without edits.
+CLAUDE.md (`~/Projects/fhir`); this file holds only the notes for this package. This repo root IS the
+`fhirpath` collection (`(define collection "fhirpath")`): modules are `fhirpath/compile` etc., and imports of the
+foundation use collection paths (`fhir/model/node`, never a relative path into another package).
+The CLI is `cli.rkt` (`raco fhirpath`); the conformance runner(s) live in `tests/` behind `--tck`.
 
 ## FHIRPath (`fhirpath/`)
-A from-scratch engine in `fhir/fhirpath/`, evaluating over the typed `fhir` node model. Layers:
+A from-scratch engine in `fhirpath/`, evaluating over the typed `fhir` node model. Layers:
 `parser/` (brag precedence-cascade grammar + br-parser-tools lexer + prefab AST), `value.rkt`
 (item/collection model + System types + `item->system`), `decimal.rkt` (exact + scale),
 `temporal-ops.rkt` (partial Date/Time/DateTime: compare/equal/arith/boundary), `quantity.rkt` +
