@@ -59,14 +59,24 @@
       (eval-fhirpath ast root)))
   (for ([v (in-list results)]) (displayln (render v))))
 
-(define (usage)
-  (eprintf "usage: raco fhirpath '<expression>' [resource.json] [--r4|--r5]\n       raco fhirpath --tck [r5|r4]\n       raco fhirpath --ucum-tck [-v]\n")
-  (exit 2))
+(define (usage [code 2])                             ; --help: stdout, exit 0
+  ((if (zero? code) printf eprintf) "usage: raco fhirpath '<expression>' [resource.json] [--r4|--r5]\n       raco fhirpath --tck [r5|r4]\n       raco fhirpath --ucum-tck [-v]\n")
+  (exit code))
 
 (module+ main
   (define-values (fmt args) (format-flag (vector->list (current-command-line-arguments))))
   (current-format fmt)
+  ;; an unreadable input file is a one-line error (exit 2), not a stack trace
+  (let ([default (uncaught-exception-handler)])
+    (uncaught-exception-handler
+     (lambda (e)
+       (cond [(exn:fail:filesystem? e)
+              (define m (regexp-match #px"path: ([^\n]*)" (exn-message e)))
+              (eprintf "fhirpath: cannot read ~a\n" (if m (cadr m) (exn-message e)))
+              (exit 2)]
+             [else (default e)]))))
   (cond
+    [(ormap (lambda (a) (member a '("-h" "--help"))) args) (usage 0)]
     [(null? args) (usage)]
     [(equal? (car args) "--tck")
      (define v (if (pair? (cdr args)) (cadr args) "r5"))
