@@ -10,6 +10,7 @@
 
 (require brag/support
          br-parser-tools/lex
+         (only-in fhir/diagnostic diagnostic loc raise-diagnostic exn:fail:diagnostic?)
          (prefix-in : br-parser-tools/lex-sre)
          racket/contract
          (only-in "ast.rkt" date-lit datetime-lit time-lit))
@@ -38,7 +39,7 @@
                   (:? (:: "-" numeric numeric (:? (:: "-" numeric numeric)))))])
 
 (define fhirpath-lexer
-  (lexer
+  (lexer-srcloc
    [(eof) (void)]
    [(:or " " "\t" "\r" "\n" "\f") (token 'WS lexeme #:skip? #t)]
    [(:: "//" (:* (:~ "\n"))) (token 'COMMENT lexeme #:skip? #t)]
@@ -79,6 +80,31 @@
    [(:or "." "[" "]" "(" ")" "," ";" "{" "}" "|" "&" "+" "-" "*" "/" "=" "<" ">" "~")
     (token lexeme lexeme)]))
 
+;; positioned : lexer-srcloc result -> token   the token with its line/column/position/span, so brag
+;; reports parse errors there (token accessors downstream are unchanged); unmatched text is a
+;; positioned LEX diagnostic (fhir/diagnostic)
+(define (positioned t)
+  (cond [(srcloc-token? t)
+         (define tok (srcloc-token-token t))
+         (define sl (srcloc-token-srcloc t))
+         (if (token-struct? tok)
+             (token (token-struct-type tok) (token-struct-val tok)
+                    #:line (srcloc-line sl) #:column (srcloc-column sl)
+                    #:position (srcloc-position sl) #:span (srcloc-span sl)
+                    #:skip? (token-struct-skip? tok))
+             tok)]
+        [else t]))
+(define ((positioned-lexer lang lex) ip)
+  (define-values (line col pos) (port-next-location ip))
+  (with-handlers ([(lambda (e) (and (exn:fail? e) (not (exn:fail:diagnostic? e))))
+                   (lambda (e)
+                     (define rest (let ([s (peek-string 30 0 ip)]) (if (eof-object? s) "" s)))
+                     (raise-diagnostic (diagnostic lang 'lex 'error
+                                                   (format "unrecognized text `~a`" (car (regexp-split #rx"[ \t\r\n]" rest)))
+                                                   (loc #f line (and col (add1 col)) pos #f))))])
+    (positioned (lex ip))))
+
 (define (tokenize ip)
   (port-count-lines! ip)
-  (lambda () (fhirpath-lexer ip)))
+  (define next (positioned-lexer 'fhirpath fhirpath-lexer))
+  (lambda () (next ip)))

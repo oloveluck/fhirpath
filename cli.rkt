@@ -18,9 +18,19 @@
          (only-in fhir/serialize/read-json read-fhir-json)
          (only-in fhir/serialize/from-json from-json)
          (only-in fhir/serialize/to-json node->jsexpr)
-         (only-in fhir/result/result ok? ok-value err-error validation-error-message))
+         (only-in fhir/result/result ok? ok-value err-error validation-error-message)
+         (only-in fhir/diagnostic diagnostic diagnostic-loc loc emit-diagnostics format-flag
+                  exn:fail:diagnostic? exn:fail:diagnostic-diagnostic))
 
 (provide evaluate)
+;; report : diagnostic text -> exit 1   (format from --format)
+(define current-format (make-parameter 'text))
+(define (report d text)
+  (emit-diagnostics (list d) #:format (current-format) #:text-of (lambda (_) text))
+  (exit 1))
+(define (with-source d source)
+  (define l (diagnostic-loc d))
+  (struct-copy diagnostic d [loc (if l (struct-copy loc l [source source]) (loc source #f #f #f #f))]))
 
 ;; render : item -> string
 (define (render v)
@@ -40,9 +50,13 @@
            (unless (ok? r) (eprintf "~a: ~a\n" resource-file (validation-error-message (err-error r))) (exit 1))
            (list (ok-value r))]
           [else '()]))
+  ;; a syntax error is a positioned diagnostic; an evaluation error a run diagnostic
+  (define ast
+    (with-handlers ([exn:fail:diagnostic? (lambda (e) (report (with-source (exn:fail:diagnostic-diagnostic e) "<expression>") expr))])
+      (parse-fhirpath expr)))
   (define results
-    (with-handlers ([exn:fail? (lambda (e) (eprintf "fhirpath: ~a\n" (exn-message e)) (exit 1))])
-      (eval-fhirpath (parse-fhirpath expr) root)))
+    (with-handlers ([exn:fail? (lambda (e) (report (diagnostic 'fhirpath 'run 'error (exn-message e) (loc "<expression>" #f #f #f #f)) expr))])
+      (eval-fhirpath ast root)))
   (for ([v (in-list results)]) (displayln (render v))))
 
 (define (usage)
@@ -50,7 +64,8 @@
   (exit 2))
 
 (module+ main
-  (define args (vector->list (current-command-line-arguments)))
+  (define-values (fmt args) (format-flag (vector->list (current-command-line-arguments))))
+  (current-format fmt)
   (cond
     [(null? args) (usage)]
     [(equal? (car args) "--tck")
