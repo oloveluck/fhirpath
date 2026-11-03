@@ -3,9 +3,9 @@
 ;;; run-r5.rkt — run the official FHIRPath R5 test suite (requires the full R5 tower so from-json
 ;;; can parse every input resource). `raco fhirpath --tck r5` or `racket tests/run-r5.rkt`.
 ;;;
-;;; The %terminologies backend (fhir/terminology/service, in the fhir-tools package) is loaded
-;;; dynamically: fhir-tools depends on fhirpath, so a static require would be a package cycle. Without
-;;; fhir-tools the 3 %terminologies tests fail and the floor drops accordingly — the run still means
+;;; The %terminologies backend (fhir/terminology/service, in the fhir-validation package) is loaded
+;;; dynamically: fhir-validation depends on fhirpath, so a static require would be a package cycle. Without
+;;; fhir-validation the 3 %terminologies tests fail and the floor drops accordingly — the run still means
 ;;; "nothing else regressed".
 
 (require racket/runtime-path
@@ -22,7 +22,7 @@
 (define (optional-terminology)
   (with-handlers ([exn:fail:filesystem:missing-module?
                    (lambda (_)
-                     (eprintf "note: fhir-tools is not installed; the 3 %terminologies tests will fail (raco pkg install fhir-tools)\n")
+                     (eprintf "note: fhir-validation is not installed; the 3 %terminologies tests will fail (raco pkg install fhir-validation)\n")
                      #f)])
     ((dynamic-require 'fhir/terminology/service 'make-r5-terminology))))
 
