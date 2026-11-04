@@ -3,7 +3,7 @@
 ;;; run-r5.rkt — run the official FHIRPath R5 test suite (requires the full R5 tower so from-json
 ;;; can parse every input resource). `raco fhirpath --tck r5` or `racket tests/run-r5.rkt`.
 ;;;
-;;; The %terminologies backend (fhir/terminology/service, in the fhir-validation package) is loaded
+;;; The %terminologies backend (fhir/terminology/service, in the fhir-tx package) is loaded
 ;;; dynamically: fhir-validation depends on fhirpath, so a static require would be a package cycle. Without
 ;;; fhir-validation the 3 %terminologies tests fail and the floor drops accordingly — the run still means
 ;;; "nothing else regressed".

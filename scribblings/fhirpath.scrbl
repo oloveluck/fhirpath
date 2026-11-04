@@ -48,7 +48,7 @@ Every result is a collection, a Racket list. Its items are typed nodes (navigate
 @racket['()].
 
 Externals are passed by name without the @tt{%}: @racket[#:externals (hash "ucum" '("http://unitsofmeasure.org"))].
-@racket["terminologies"] may hold a @racket[tx-service] (fhir-validation builds one over FHIR
+@racket["terminologies"] may hold a @racket[tx-service] (fhir-tx builds one over FHIR
 packages), as @racket[(list tx)], which makes @tt{%terminologies.expand()} and friends work. @racket[parse-fhirpath] is
 memoized, so parsing inside a loop costs nothing after the first time.
 
@@ -168,7 +168,8 @@ Resolves @tt{%name}: a user variable, then a caller external, then the well-know
 The @tt{%terminologies} handle. Each closure returns a collection of typed nodes:
 @racket[expand] is @tt{url [version] [params] -> (listof ValueSet)}, @racket[validate] is
 @tt{url code [system] -> (listof Parameters)}, @racket[translate] is
-@tt{url code [system] -> (listof Parameters)}.}
+@tt{url code [system] -> (listof Parameters)}. The @tt{fhir-tx} package builds one over FHIR
+packages.}
 
 @section[#:tag "values"]{Values}
 @defmodule[fhirpath/value]

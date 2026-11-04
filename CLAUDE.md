@@ -55,5 +55,5 @@ keeps them; fixing R4 would regress R5); 1 R4 signed-zero `(-0.0034).lowBoundary
   from `fml/fhirpath-print.rkt`: the store's search-param narrowing and FML's StructureMap
   emission both use it.
 - `fhirpath/tests/run-r5.rkt` loads the `%terminologies` backend (`fhir/terminology/service`,
-  main package) with `dynamic-require`: the terminology service depends on fhirpath, so a static
-  require would make the packages cyclic. `raco fhir fhirpath-tck` (main package) has it installed.
+  the fhir-tx package) with `dynamic-require`: the terminology service depends on fhirpath, so a static
+  require would make the packages cyclic.
