@@ -48,8 +48,8 @@ Every result is a collection, a Racket list. Its items are typed nodes (navigate
 @racket['()].
 
 Externals are passed by name without the @tt{%}: @racket[#:externals (hash "ucum" '("http://unitsofmeasure.org"))].
-@racket["terminologies"] may be a @racket[tx-service] (fhir-validation builds one over FHIR
-packages), which makes @tt{%terminologies.expand()} and friends work. @racket[parse-fhirpath] is
+@racket["terminologies"] may hold a @racket[tx-service] (fhir-validation builds one over FHIR
+packages), as @racket[(list tx)], which makes @tt{%terminologies.expand()} and friends work. @racket[parse-fhirpath] is
 memoized, so parsing inside a loop costs nothing after the first time.
 
 @bold{Strict mode.} With one typed node as input, @racket[eval-fhirpath] first runs
@@ -72,6 +72,27 @@ raco fhirpath --ucum-tck [-v]                         the UCUM functional tests
 
 Primitives print as text, complex items as FHIR JSON. @litchar{--format text|json|outcome} chooses how an
 error is reported. Exit codes: 0, 1 on a FHIRPath error or a suite regression, 2 on usage.
+
+@section{Limits}
+
+@itemlist[
+@item{Two R4 suite cases fail by design: fractional seconds in @tt{@"@"T…+0.1 's'} (R4 truncates,
+R5 keeps them; the engine follows R5) and @tt{(-0.0034).lowBoundary(1) = -0.0} (decimals have no
+signed zero).}
+@item{@tt{resolve()} follows @tt{#id} references into the root's @tt{contained} resources only;
+anything else is empty. @tt{conformsTo(url)} checks the base type the url names, not a profile's
+constraints. @tt{trace()} passes through without logging. @tt{comparable()} covers Quantity.}
+@item{@tt{%terminologies} has @tt{expand()}, @tt{validateVS()} and @tt{translate()}; @tt{expand()}
+drops its parameters argument, the other two their system argument. No @tt{lookup()},
+@tt{validateCS()}, @tt{subsumes()} or @tt{memberOf()}, and no @tt{subsumedBy()}, @tt{htmlChecks()},
+@tt{elementDefinition()}, @tt{slice()} or @tt{checkModifiers()}.}
+@item{Not implemented from FHIRPath 3.0: @tt{lastIndexOf}, @tt{coalesce}, @tt{sum}, @tt{min},
+@tt{max}, @tt{avg}, @tt{toLong}, the @tt{yearOf} … @tt{millisecondOf} and @tt{timezoneOffsetOf}
+components, @tt{dateOf}, @tt{timeOf}, @tt{duration}, @tt{difference}, @tt{repeatAll}. An unknown
+function is a @racket['semantic] error.}
+@item{Strict mode is conservative: it stops once a type is unknown (after @tt{resolve()}, a
+polymorphic step, or a function it does not model), so it never rejects a valid expression and does
+not catch everything.}]
 
 @section{Parsing and evaluation}
 @defmodule[fhirpath/parser/parse]
