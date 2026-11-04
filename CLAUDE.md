@@ -21,7 +21,7 @@ Data-driven conformance harness in `fhirpath/tests/` runs the official HL7 suite
 `raco fhir fhirpath-tck r5` (1044) / `... r4` (934). Current: **R5 1044/1044, R4 932/934** — 100% of
 in-scope tests. Each run requires the matching full tower (`run-r5` requires `fhir/r5/schemas`);
 `tests/vendor/` has the suite XML + `.g4`, `tests/inputs*/` the JSON resources.
-`tests/fhirpath-test.rkt` is a fast in-tree smoke. Input loading is **lenient** (`from-json
+The modules carry their own `module+ test`s. Input loading is **lenient** (`from-json
 #:lenient? #t` — unknown/mismatched fields are skipped) so examples from a newer FHIR version than
 the tower still load.
 
