@@ -31,6 +31,12 @@ jobs:
             "$PWD" \
             "https://github.com/oloveluck/fhir.git?path=fhir" \
             "https://github.com/oloveluck/fhir.git?path=fhir-spec"
+      - name: The FHIRPath and UCUM conformance suites (floor-ratcheted) and the smoke tests
+        run: |
+          raco test tests/fhirpath-test.rkt
+          raco fhirpath --tck r5
+          raco fhirpath --tck r4
+          raco fhirpath --ucum-tck
       - name: Build the documentation
         run: |
           raco scribble +m --html --dest site --dest-name index.html --redirect-main https://docs.racket-lang.org/ scribblings/fhirpath.scrbl
