@@ -35,7 +35,7 @@ jobs:
             "https://github.com/oloveluck/fhir.git?path=fhir-spec"
       - name: Build the documentation
         run: |
-          raco scribble --html --dest site --dest-name index.html --redirect-main https://docs.racket-lang.org/ scribblings/fhirpath.scrbl
+          raco scribble +m --html --dest site --dest-name index.html --redirect-main https://docs.racket-lang.org/ scribblings/fhirpath.scrbl
       - uses: actions/upload-pages-artifact@v3
         with:
           path: site
