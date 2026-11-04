@@ -4,6 +4,7 @@ A FHIRPath engine: parser, evaluator, full UCUM (unit validation, canonicalisati
 
 Part of **fhir — FHIR as a family of Racket `#lang`s** ([oloveluck/fhir](https://github.com/oloveluck/fhir)).
 Collection `fhirpath`. Library only (no `#lang`); the embedders `cql`, `fml` and `fsh` build on it.
+Reference: [oloveluck.github.io/fhirpath](https://oloveluck.github.io/fhirpath/).
 
 ## Install
 
