@@ -1,6 +1,6 @@
 # fhirpath — FHIRPath for Racket
 
-A from-scratch FHIRPath engine: parser, evaluator, full UCUM (unit validation, canonicalisation, conversion), precision-aware decimals and partial dates/times — evaluating over the `fhir` typed node model. Passes the official HL7 suites: R5 1044/1044, R4 932/934, UCUM 573/573.
+A FHIRPath engine: parser, evaluator, full UCUM (unit validation, canonicalisation, conversion), precision-aware decimals and partial dates/times — evaluating over the `fhir` typed node model. Passes the official HL7 suites: R5 1044/1044, R4 932/934, UCUM 573/573.
 
 Part of **fhir — FHIR as a family of Racket `#lang`s** ([oloveluck/fhir](https://github.com/oloveluck/fhir)).
 Collection `fhirpath`. Library only (no `#lang`); the embedders `cql`, `fml` and `fsh` build on it.
