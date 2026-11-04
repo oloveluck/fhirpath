@@ -21,7 +21,8 @@ A library, with no @hash-lang[]: the @tt{cql}, @tt{fml} and @tt{fsh} packages em
 @section{Install}
 
 @verbatim{
-raco pkg install --link --auto fhir/fhir fhirpath      # from source, with the fhir repo alongside
+raco pkg install --link --auto fhir/fhir fhirpath
+    # from source, with the fhir repo alongside
 }
 
 @section{Using it}
@@ -37,7 +38,8 @@ resource, parse the expression, evaluate.
   (ok-value (from-json (call-with-input-file "patient.json" read-fhir-json) #:lenient? #t)))
 (define given (eval-fhirpath (parse-fhirpath "Patient.name.given") (list patient)))
 (map item->system given)                       (code:comment "=> '(\"Peter\" \"James\")")
-(eval-fhirpath (parse-fhirpath "birthDate < @1980") (list patient))   (code:comment "=> '(#t)")
+(code:comment "=> '(#t)")
+(eval-fhirpath (parse-fhirpath "birthDate < @1980") (list patient))
 ]
 
 Every result is a collection, a Racket list. Its items are typed nodes (navigate on, or
@@ -68,7 +70,7 @@ raco fhirpath --tck [r5|r4]                           the HL7 FHIRPath suite (fl
 raco fhirpath --ucum-tck [-v]                         the UCUM functional tests
 }
 
-Primitives print as text, complex items as FHIR JSON. @tt{--format text|json|outcome} chooses how an
+Primitives print as text, complex items as FHIR JSON. @litchar{--format text|json|outcome} chooses how an
 error is reported. Exit codes: 0, 1 on a FHIRPath error or a suite regression, 2 on usage.
 
 @section{Parsing and evaluation}
