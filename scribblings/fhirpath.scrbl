@@ -13,60 +13,86 @@ A @hyperlink["https://hl7.org/fhirpath/"]{FHIRPath} engine over the typed node m
 analysis for strict mode. It passes the official HL7 suites (R5 1044/1044, R4 932/934) and the UCUM
 functional tests (573/573).
 
-The package is a library: it has no @hash-lang[]. The @tt{cql}, @tt{fml} and @tt{fsh} packages embed it, and
+A library, with no @hash-lang[]: the @tt{cql}, @tt{fml} and @tt{fsh} packages embed it, and
 @tt{fhir-validation} evaluates invariants and search parameters with it.
 
 @table-of-contents[]
 
-@section{Install and use}
+@section{Install}
 
 @verbatim{
 raco pkg install --link --auto fhir/fhir fhirpath      # from source, with the fhir repo alongside
 }
 
-Expressions navigate typed @racket[fhir] nodes, so a FHIR version tower must be loaded first:
-@racket[(require fhir/r5/schemas)] (or @racket[fhir/r4/schemas], @racket[fhir/r6/types]) registers the
-types.
+@section{Using it}
+
+Expressions evaluate over typed @racket[fhir] nodes, so load a version tower first:
+@racket[fhir/r5/schemas], @racket[fhir/r4/schemas] or @racket[fhir/r6/types]. Then parse the
+resource, parse the expression, evaluate.
 
 @racketblock[
-(require fhir/r5/schemas fhir/serialize/from-json fhirpath/parser/parse fhirpath/eval)
-(define patient (ok-or-raise (from-json (string->jsexpr "{\"resourceType\":\"Patient\",\"name\":[{\"given\":[\"Peter\"]}]}"))))
-(eval-fhirpath (parse-fhirpath "Patient.name.given") (list patient))   (code:comment "a collection: a list of items")
+(require fhir/r5/schemas fhir/serialize/from-json fhir/serialize/read-json fhir/result/result
+         fhirpath/parser/parse fhirpath/eval fhirpath/value)
+(define patient
+  (ok-value (from-json (call-with-input-file "patient.json" read-fhir-json) #:lenient? #t)))
+(define given (eval-fhirpath (parse-fhirpath "Patient.name.given") (list patient)))
+(map item->system given)                       (code:comment "=> '(\"Peter\" \"James\")")
+(eval-fhirpath (parse-fhirpath "birthDate < @1980") (list patient))   (code:comment "=> '(#t)")
 ]
 
-A collection is a Racket list. Its items are typed nodes, FHIR primitives, or System values
-(@secref["values"]). An error during evaluation raises @racket[exn:fp] with a @racket[kind] of
-@racket['syntax], @racket['semantic] or @racket['execution]; a parse error raises
-@racket[exn:fail:diagnostic] (@tt{fhir/diagnostic}), positioned in the expression.
+Every result is a collection, a Racket list. Its items are typed nodes (navigate on, or
+@racket[node->jsexpr] them), FHIR primitives, or System values (@secref["values"]);
+@racket[item->system] collapses a primitive to its System value. An empty collection is
+@racket['()].
 
-@section{Parsing}
+Externals are passed by name without the @tt{%}: @racket[#:externals (hash "ucum" '("http://unitsofmeasure.org"))].
+@racket["terminologies"] may be a @racket[tx-service] (fhir-validation builds one over FHIR
+packages), which makes @tt{%terminologies.expand()} and friends work. @racket[parse-fhirpath] is
+memoized, so parsing inside a loop costs nothing after the first time.
+
+@bold{Strict mode.} With one typed node as input, @racket[eval-fhirpath] first runs
+@racket[analyze]: an element the type does not have, or a direct expanded-choice access
+(@tt{Observation.valueQuantity}), raises a @racket['semantic] error before anything runs.
+@racket[#:strict? #f] allows the choice access, as the spec's lenient mode does.
+
+@bold{Errors.} A syntax error raises @racket[exn:fail:diagnostic] (@tt{fhir/diagnostic}) with the
+position; an evaluation error raises @racket[exn:fp] (@tt{fhirpath/error}) whose @racket[kind] is
+@racket['syntax], @racket['semantic] or @racket['execution].
+
+@bold{Command line.}
+
+@verbatim{
+raco fhirpath 'Patient.name.given' patient.json      one result per line (R5; --r4 for R4)
+raco fhirpath '1 year + 6 months'                     no resource: over the empty collection
+raco fhirpath --tck [r5|r4]                           the HL7 FHIRPath suite (floor-ratcheted)
+raco fhirpath --ucum-tck [-v]                         the UCUM functional tests
+}
+
+Primitives print as text, complex items as FHIR JSON. @tt{--format text|json|outcome} chooses how an
+error is reported. Exit codes: 0, 1 on a FHIRPath error or a suite regression, 2 on usage.
+
+@section{Parsing and evaluation}
 @defmodule[fhirpath/parser/parse]
 
 @defproc[(parse-fhirpath [str string?]) any/c]{
-Parses one expression to its AST (immutable prefab structs). Memoized, so the same expression parsed
-repeatedly (invariants, search parameters) costs one parse. An empty string or a program of several
+One expression to its AST (immutable prefab structs). An empty string or a program of several
 expressions is an error.}
-
 @defproc[(parse-fhirpath-program [str string?]) list?]{
-Parses a @tt{;}-separated program to a list of ASTs. A syntax error raises
-@racket[exn:fail:diagnostic] with the position, and "the expression ends after @tt{(}" when the input
-ran out.}
+A @tt{;}-separated program to a list of ASTs. A syntax error raises @racket[exn:fail:diagnostic]
+with the position, and "the expression ends after @tt{(}" when the input ran out.}
 
-@section{Evaluation}
+@subsection[#:style 'unnumbered]{@tt{fhirpath/eval}}
 @defmodule[fhirpath/eval]
 
 @defproc[(eval-fhirpath [ast any/c] [root list?]
                         [#:externals externals hash? (hash)]
                         [#:strict? strict? boolean? #t]) list?]{
 Evaluates @racket[ast] with @racket[root] as the input collection and returns the result collection.
-@racket[externals] maps names (without the @tt{%}) to collections; @racket["terminologies"] may be a
-@racket[tx-service]. When @racket[root] is a single typed node, @racket[analyze] first checks the
-expression against that type (@racket[strict?] forbids direct access to an expanded choice element
-such as @tt{Observation.valueQuantity}).}
-
+When @racket[root] is a single typed node, @racket[analyze] checks the expression against its type
+first.}
 @defproc[(fp-eval [ast any/c] [focus list?] [env env?]) list?]{
 The evaluator proper: @racket[ast] over the focus collection in an environment built with
-@racket[make-env]. @racket[eval-fhirpath] wraps it.}
+@racket[make-env].}
 
 @subsection[#:style 'unnumbered]{@tt{fhirpath/analyze}}
 @defmodule[fhirpath/analyze]
@@ -81,9 +107,9 @@ expression it cannot fully type.}
 @defmodule[fhirpath/print]
 
 @defproc[(fhirpath->string [ast any/c]) string?]{
-The AST back as text. Parentheses are conservative: every operand that is itself a binary operation is
-wrapped, so @racket[(fhirpath->string (parse-fhirpath "a and b or c"))] is @racket["(a and b) or c"].
-Printing then parsing is a fixpoint.}
+The AST back as text, every nested binary operation parenthesized:
+@racket[(fhirpath->string (parse-fhirpath "a and b or c"))] is @racket["(a and b) or c"]. Printing
+then parsing is a fixpoint.}
 
 @section{The environment}
 @defmodule[fhirpath/environment]
@@ -93,26 +119,20 @@ Printing then parsing is a fixpoint.}
 The evaluation context: the focus (@tt{$this}), the iteration index (@tt{$index}), the aggregate
 accumulator (@tt{$total}), the variables @tt{defineVariable} bound, the caller's externals, and the
 root collection (@tt{%context}, @tt{%resource}).}
-
 @defproc[(make-env [root any/c] [#:root root* any/c root] [#:externals externals hash? (hash)]) env?]{
 A fresh environment whose focus is @racket[root]. The variable table is shared by every environment
 derived from it, so a @tt{defineVariable} binding stays visible for the rest of the expression.}
-
 @deftogether[(
 @defproc[(env-with-item [e env?] [item any/c] [index exact-nonnegative-integer?]) env?]
 @defproc[(env-with-this [e env?] [coll list?]) env?]
 @defproc[(env-with-total [e env?] [total any/c]) env?])]{
 The same environment with a new focus item and index, a new focus collection, or a new accumulator.}
-
 @defproc[(env-clone-vars [e env?]) env?]{
-A new variable scope seeded with the current bindings. Used at the operands of @tt{|} and per
-projection, so a @tt{defineVariable} inside a branch does not leak to its siblings.}
-
+A new variable scope seeded with the current bindings, used at the operands of @tt{|} and per
+projection so a @tt{defineVariable} inside a branch does not leak to its siblings.}
 @deftogether[(
 @defproc[(env-define-var [e env?] [name string?] [coll any/c]) env?]
-@defproc[(env-var-bound? [e env?] [name string?]) boolean?])]{
-Bind a variable in the current scope; test whether a name is bound.}
-
+@defproc[(env-var-bound? [e env?] [name string?]) boolean?])]
 @defproc[(env-lookup-external [e env?] [name string?]) (or/c list? #f)]{
 Resolves @tt{%name}: a user variable, then a caller external, then the well-known constants
 (@tt{context}, @tt{resource}, @tt{rootResource}, @tt{ucum}, @tt{sct}, @tt{loinc}, @tt{vs-X},
@@ -125,8 +145,7 @@ Resolves @tt{%name}: a user variable, then a caller external, then the well-know
 The @tt{%terminologies} handle. Each closure returns a collection of typed nodes:
 @racket[expand] is @tt{url [version] [params] -> (listof ValueSet)}, @racket[validate] is
 @tt{url code [system] -> (listof Parameters)}, @racket[translate] is
-@tt{url code [system] -> (listof Parameters)}. The @tt{fhir-validation} package's
-@tt{fhir/terminology/service} builds one over FHIR packages.}
+@tt{url code [system] -> (listof Parameters)}.}
 
 @section[#:tag "values"]{Values}
 @defmodule[fhirpath/value]
@@ -139,7 +158,6 @@ integer, an @racket[fp-long], an @racket[fp-decimal], a string, a @racket[moment
 A System.Quantity; @racket[unit] is a UCUM code or a calendar keyword (@racket["year"] …).}
 @defstruct*[fp-long ([v exact-integer?])]{A System.Long (R5), distinct from Integer for @tt{is}.}
 @defstruct*[typeinfo ([namespace symbol?] [name symbol?])]{The result of @tt{type()}.}
-
 @defproc[(item->system [item any/c]) any/c]{A FHIR primitive collapsed to its System value; System values pass through. Quantity-like nodes become an @racket[fp-quantity].}
 @deftogether[(
 @defproc[(item-fhir-type [item any/c]) (or/c symbol? #f)]
@@ -164,8 +182,8 @@ Is @racket[x] a System scalar; is @racket[item] a FHIR primitive; is it a primit
 @defproc[(item-of-type? [item any/c] [type symbol?]) boolean?])]{
 @tt{is} uses the full ancestry (a @tt{code} is a @tt{string}); @tt{as} and @tt{ofType} use the strict
 one. A type is @tt{System.X}, @tt{FHIR.x} or bare (FHIR first, then System).}
-@defproc[(known-type? [type symbol?]) boolean?]{Is the specifier a real FHIR or System type.}
-@defproc[(fhir-ancestors [type (or/c symbol? #f)]) (listof symbol?)]{The ancestor chain, self first: @racket[(fhir-ancestors 'date)] is @racket['(date PrimitiveType DataType Element Base)].}
+@defproc[(known-type? [type symbol?]) boolean?]
+@defproc[(fhir-ancestors [type (or/c symbol? #f)]) (listof symbol?)]{Self first: @racket[(fhir-ancestors 'date)] is @racket['(date PrimitiveType DataType Element Base)].}
 @defproc[(type-info-of [item any/c]) (values symbol? symbol?)]{Namespace and name for @tt{type()}.}
 
 @section{Decimals, quantities, dates}
@@ -189,13 +207,13 @@ Conversions; @racket[decimal->string] keeps the scale's trailing zeros.}
 @defproc[(decimal-negate [d fp-decimal?]) fp-decimal?]
 @defproc[(decimal-cmp [a fp-decimal?] [b fp-decimal?]) (or/c -1 0 1)]
 @defproc[(decimal-round [d fp-decimal?] [precision exact-nonnegative-integer?]) fp-decimal?])]{
-Arithmetic. Division by zero is @racket[#f]; comparison is by value, so @racket["1.0"] and
-@racket["1.00"] compare equal; rounding is half away from zero, as FHIRPath's @tt{round}.}
+Division by zero is @racket[#f]; comparison is by value, so @racket["1.0"] and @racket["1.00"]
+compare equal; rounding is half away from zero, as FHIRPath's @tt{round}.}
 
 @subsection[#:style 'unnumbered]{@tt{fhirpath/quantity}}
 @defmodule[fhirpath/quantity]
 
-@defproc[(make-quantity [value fp-decimal?] [unit string?]) fp-quantity?]{A quantity; @racket[calendar?] follows the unit.}
+@defproc[(make-quantity [value fp-decimal?] [unit string?]) fp-quantity?]
 @defproc[(calendar-unit? [unit string?]) boolean?]{@racket["year"] … @racket["millisecond"], singular or plural.}
 @deftogether[(
 @defproc[(quantity-compare [a fp-quantity?] [b fp-quantity?]) (or/c -1 0 1 'empty)]
@@ -212,8 +230,8 @@ to the least precision. Rendering is @tt{value 'unit'}, or @tt{value unit} for a
 
 @defproc[(ucum-valid? [unit string?]) boolean?]{Parses per the UCUM syntax with every atom known. Special units such as @tt{Cel} are valid though they have no linear canonical form.}
 @defproc[(ucum-canonical [unit string?]) (or/c (cons/c rational? vector?) #f)]{The magnitude and 7-dimension vector of a unit, or @racket[#f] for a special unit.}
-@defproc[(ucum-commensurable? [u1 string?] [u2 string?]) boolean?]{Same dimensions.}
-@defproc[(ucum-convert [value rational?] [from string?] [to string?]) (or/c rational? #f)]{Exact conversion: @racket[(ucum-convert 4 "g" "mg")] is @racket[4000].}
+@defproc[(ucum-commensurable? [u1 string?] [u2 string?]) boolean?]
+@defproc[(ucum-convert [value rational?] [from string?] [to string?]) (or/c rational? #f)]{Exact: @racket[(ucum-convert 4 "g" "mg")] is @racket[4000].}
 @defproc[(ucum-display [unit string?]) (or/c string? #f)]{The display name the UCUM suite expects: @racket["m3.kg-1"] gives @racket["(meter ^ 3) * (kilogram ^ -1)"].}
 
 @subsection[#:style 'unnumbered]{@tt{fhirpath/temporal-ops}}
@@ -243,16 +261,3 @@ the least precision. Timezones normalize only when both operands carry a time.}
 @defproc[(moment-boundary [m moment?] [digits exact-integer?] [low? boolean?]) (or/c moment? #f)])]{
 Add @racket[n] calendar or time units at the moment's precision; add milliseconds, carrying through
 the date; the low or high boundary filled to the precision @racket[digits] implies.}
-
-@section{Command line}
-
-@verbatim{
-raco fhirpath '<expression>' [resource.json] [--r4|--r5]   evaluate; one result per line
-raco fhirpath --tck [r5|r4]                               the HL7 FHIRPath suite (floor-ratcheted)
-raco fhirpath --ucum-tck [-v]                             the UCUM functional tests
-}
-
-The tower is R5 unless @tt{--r4}. With no resource the expression runs over the empty collection.
-Primitives print as text, complex items as FHIR JSON. @tt{--format text|json|outcome} chooses how a
-parse or evaluation error is reported (text on stderr; JSON or an OperationOutcome on stdout). Exit
-codes: 0, 1 on a FHIRPath error or a suite regression, 2 on usage.
