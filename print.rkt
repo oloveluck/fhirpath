@@ -44,7 +44,7 @@
 
 (define (lit->string v)
   (match v
-    [(? string?) (format "'~a'" v)]
+    [(? string?) (format "'~a'" (escape-string v))]
     [#t "true"] [#f "false"]
     ['empty "{}"]
     [(? exact-integer?) (number->string v)]
@@ -55,6 +55,13 @@
     [(time-lit s) (format "@T~a" s)]
     [_ (format "~a" v)]))
 (define dec-lit? (lambda (x) (match x [(dec-lit _) #t] [_ #f])))
+;; the FHIRPath string escapes, so a printed literal lexes back to the same value (`'\\d+'`)
+(define (escape-string s)
+  (apply string-append
+         (for/list ([c (in-string s)])
+           (case c
+             [(#\\) "\\\\"] [(#\') "\\'"] [(#\newline) "\\n"] [(#\return) "\\r"] [(#\tab) "\\t"] [(#\page) "\\f"]
+             [else (string c)]))))
 
 (module+ test
   (require rackunit (only-in "parser/parse.rkt" parse-fhirpath))
@@ -65,6 +72,9 @@
   (check-equal? (roundtrip "name.where(use = 'official')") "name.where(use = 'official')")
   (check-equal? (roundtrip "(Observation.value as CodeableConcept).text") "(Observation.value as CodeableConcept).text")
   (check-equal? (roundtrip "(a | b).first()") "(a | b).first()")
+  ;; a string literal keeps its escapes (the lexer unescapes, the printer escapes again)
+  (check-equal? (roundtrip "a.matches('\\\\d+')") "a.matches('\\\\d+')")
+  (check-equal? (parse-fhirpath (roundtrip "x = 'it\\'s'")) (parse-fhirpath "x = 'it\\'s'"))
   (check-equal? (roundtrip "(-x).abs()") "(-x).abs()")
   ;; print∘parse is a fixpoint: re-parsing the printed text yields the same AST
   (for ([s '("linkId.value in ('patient.sex')" "%value + 5 days" "iif(x, 'a', 'b')")])
