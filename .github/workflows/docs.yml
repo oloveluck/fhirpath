@@ -27,12 +27,12 @@ jobs:
           version: stable
           variant: CS
           distribution: full
-      - name: Install the family packages this one builds on
+      - name: Install the packages (this repository's and the family packages it builds on, in one command)
         run: |
           raco pkg install --no-docs --batch --auto \
-            "https://github.com/oloveluck/fhir.git?path=fhir"
-      - name: Install this repository's packages
-        run: raco pkg install --no-docs --batch --auto .
+            "." \
+            "https://github.com/oloveluck/fhir.git?path=fhir" \
+            "https://github.com/oloveluck/fhir.git?path=fhir-spec"
       - name: Build the documentation
         run: |
           raco scribble --html --dest site --dest-name index.html --redirect-main https://docs.racket-lang.org/ scribblings/fhirpath.scrbl
