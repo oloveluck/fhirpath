@@ -82,8 +82,8 @@ signed zero).}
 @item{@tt{resolve()} follows @tt{#id} references into the root's @tt{contained} resources only;
 anything else is empty. @tt{conformsTo(url)} checks the base type the url names, not a profile's
 constraints. @tt{trace()} passes through without logging. @tt{comparable()} covers Quantity.}
-@item{@tt{%terminologies} has @tt{expand()}, @tt{validateVS()} and @tt{translate()}; @tt{expand()}
-drops its parameters argument, the other two their system argument. No @tt{lookup()},
+@item{@tt{%terminologies} has @tt{expand()} (a url and a Parameters), @tt{validateVS()} and
+@tt{translate()} (a code, Coding or CodeableConcept, and a system). No @tt{lookup()},
 @tt{validateCS()}, @tt{subsumes()} or @tt{memberOf()}, and no @tt{subsumedBy()}, @tt{htmlChecks()},
 @tt{elementDefinition()}, @tt{slice()} or @tt{checkModifiers()}.}
 @item{Not implemented from FHIRPath 3.0: @tt{lastIndexOf}, @tt{coalesce}, @tt{sum}, @tt{min},

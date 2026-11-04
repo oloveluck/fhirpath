@@ -294,12 +294,39 @@
 (define (tx-subject s who)
   (cond [(and (pair? s) (null? (cdr s)) (tx-service? (car s))) (car s)]
         [else (fp-error 'execution (format "~a() requires %terminologies" who))]))
+;; a Parameters resource argument -> the service's parameter hash (name -> value, or values)
+(define (tx-params coll)
+  (define it (and (pair? coll) (null? (cdr coll)) (car coll)))
+  (cond [(and (fhir? it) (eq? (fhir-type it) 'Parameters))
+         (for/hash ([(k vs) (in-hash (parameters->inputs (node->jsexpr it)))])
+           (values k (if (and (pair? vs) (null? (cdr vs))) (car vs) vs)))]
+        [else (hash)]))
+;; a coded argument: a Coding, a CodeableConcept, or a code string
+(define (tx-coded coll)                 ; -> (values code coding codeable-concept)
+  (define it (and (pair? coll) (null? (cdr coll)) (car coll)))
+  (cond [(and (fhir? it) (eq? (fhir-type it) 'Coding)) (values #f (node->jsexpr it) #f)]
+        [(and (fhir? it) (eq? (fhir-type it) 'CodeableConcept)) (values #f #f (node->jsexpr it))]
+        [else (values (str1 coll) #f #f)]))
 (def! 'expand #:min 1 #:max 2
-      (lambda (s a e ev) ((tx-service-expand (tx-subject s 'expand)) (str1 (car a)))))
+      (lambda (s a e ev)
+        ((tx-service-expand (tx-subject s 'expand)) (str1 (car a)) #f
+                                                   (if (pair? (cdr a)) (tx-params (cadr a)) (hash)))))
 (def! 'validateVS #:min 2 #:max 3
-      (lambda (s a e ev) ((tx-service-validate (tx-subject s 'validateVS)) (str1 (car a)) (str1 (cadr a)))))
+      (lambda (s a e ev)
+        (define-values (code coding cc) (tx-coded (cadr a)))
+        (define system (and (pair? (cddr a)) (str1 (caddr a))))
+        ((tx-service-validate (tx-subject s 'validateVS)) (str1 (car a)) code system
+                                                         #:coding coding #:codeable-concept cc)))
 (def! 'translate #:min 2 #:max 3
-      (lambda (s a e ev) ((tx-service-translate (tx-subject s 'translate)) (str1 (car a)) (str1 (cadr a)))))
+      (lambda (s a e ev)
+        (define-values (code coding cc) (tx-coded (cadr a)))
+        (define first-coding (or coding (and cc (let ([cs (hash-ref cc 'coding '())]) (and (pair? cs) (car cs))))))
+        (define system (or (and (pair? (cddr a)) (str1 (caddr a))) (and first-coding (hash-ref first-coding 'system #f))))
+        ((tx-service-translate (tx-subject s 'translate)) (str1 (car a))
+                                                          (or code (and first-coding (hash-ref first-coding 'code #f)))
+                                                          system)))
+(require (only-in fhir/model/node fhir? fhir-type) (only-in fhir/serialize/to-json node->jsexpr)
+         (only-in fhir/operation parameters->inputs))
 (def! 'conformsTo #:min 1 #:max 1
       (lambda (s a e ev)
         (define url (str1 (car a)))
