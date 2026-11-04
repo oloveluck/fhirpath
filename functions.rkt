@@ -64,8 +64,24 @@
 ;; resolve one item: a Reference node or a reference string -> the contained resource(s) it points to
 (define (resolve-one item e)
   (define ref (ref-of item))
-  (cond [(and ref (string-prefix? ref "#")) (find-contained (substring ref 1) e)]
-        [else '()]))                              ; external / bundle refs unsupported
+  (cond [(not ref) '()]
+        [(string-prefix? ref "#") (find-contained (substring ref 1) e)]
+        [else (find-in-bundle ref e)]))          ; an external reference resolves only within a root Bundle
+;; a reference resolved against the root Bundle's entries: by fullUrl, by the entry resource's
+;; Type/id (a relative reference), or by an absolute reference ending in that Type/id
+(define (find-in-bundle ref e)
+  (define root (env-root e))
+  (cond
+    [(and (pair? root) (fhir? (car root)) (eq? (fhir-type (car root)) 'Bundle))
+     (define entries (let ([x (fhir-ref (car root) 'entry #f)]) (cond [(list? x) x] [x (list x)] [else '()])))
+     (for/list ([en (in-list entries)]
+                #:when (let* ([full (let ([f (fhir-ref en 'fullUrl #f)]) (and f (let ([v (item->system f)]) (and (string? v) v))))]
+                              [res (fhir-ref en 'resource #f)]
+                              [tid (and (fhir? res) (contained-id res) (format "~a/~a" (fhir-type res) (contained-id res)))])
+                         (or (and full (equal? full ref))
+                             (and tid (or (equal? tid ref) (string-suffix? ref (string-append "/" tid)))))))
+       (fhir-ref en 'resource #f))]
+    [else '()]))
 (define (ref-of item)
   (cond
     [(fhir? item) (let ([r (navigate (list item) 'reference)])
