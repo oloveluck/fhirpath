@@ -33,7 +33,7 @@ jobs:
             "https://github.com/oloveluck/fhir.git?path=fhir-spec"
       - name: The FHIRPath and UCUM conformance suites (floor-ratcheted) and the smoke tests
         run: |
-          raco test tests/fhirpath-test.rkt
+          raco test eval.rkt functions.rkt equality.rkt decimal.rkt temporal-ops.rkt ucum.rkt types.rkt analyze.rkt print.rkt parser/parse.rkt
           raco fhirpath --tck r5
           raco fhirpath --tck r4
           raco fhirpath --ucum-tck
