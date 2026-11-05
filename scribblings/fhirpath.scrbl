@@ -88,6 +88,12 @@ the position; an evaluation error raises @racket[exn:fp] whose @racket[kind] is 
 @litchar{--format text|json|outcome} chooses how an error is reported. Exit codes: 0, 1 on a
 FHIRPath error or a suite regression, 2 on usage.
 
+@section{In an editor, for an agent}
+
+@tt{fhirpath/support} is what the family's language server (fhir-lsp) and MCP server (fhir-mcp) load
+for FHIRPath: a document's diagnostics (one expression; a syntax error positioned) and the tool
+@tt{fhirpath_evaluate}. It is a @tt{fhir/lang/support} value.
+
 @section{Limits}
 
 @itemlist[
