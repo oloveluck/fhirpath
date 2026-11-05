@@ -57,3 +57,7 @@ keeps them; fixing R4 would regress R5); 1 R4 signed-zero `(-0.0034).lowBoundary
 - `fhirpath/tests/run-r5.rkt` loads the `%terminologies` backend (`fhir/terminology/service`,
   the fhir-tx package) with `dynamic-require`: the terminology service depends on fhirpath, so a static
   require would make the packages cyclic.
+
+## Editor and agent support (`support.rkt`)
+Through `fhir/lang/support`: a document's diagnostics (one expression; a syntax error positioned) and
+the tool `fhirpath_evaluate`; the LSP and MCP hubs load it by collection name.
