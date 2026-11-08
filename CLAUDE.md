@@ -61,3 +61,9 @@ keeps them; fixing R4 would regress R5); 1 R4 signed-zero `(-0.0034).lowBoundary
 ## Editor and agent support (`support.rkt`)
 Through `fhir/lang/support`: a document's diagnostics (one expression; a syntax error positioned) and
 the tool `fhirpath_evaluate`; the LSP and MCP hubs load it by collection name.
+
+## Workspace support (`workspace.rkt`)
+A `.fhirpath` file is one expression: `run` evaluates it over the data source's resources of `over`
+(a type or Type/id) or of the type the expression starts with, typed by the workspace's tower (R4 for
+4.0.1); `explain` over one resource gives every sub-expression evaluated against the same input (a
+path's target, an operator's operands) with its value; function arguments are listed by text.
