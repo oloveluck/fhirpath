@@ -90,9 +90,9 @@ FHIRPath error or a suite regression, 2 on usage.
 
 @section{In an editor, for an agent}
 
-@tt{fhirpath/support} is what the family's language server (fhir-lsp) and MCP server (fhir-mcp) load
-for FHIRPath: a document's diagnostics (one expression; a syntax error positioned) and the tool
-@tt{fhirpath_evaluate}. It is a @tt{fhir/lang/support} value.
+@tt{fhirpath/support} is what the family's language server (fhir-lsp) loads for FHIRPath: a
+document's diagnostics (one expression; a syntax error positioned). @tt{fhirpath/workspace} is what
+fhir-mcp runs for an agent: an expression over the data's resources, and every part of it explained.
 
 @section{Limits}
 

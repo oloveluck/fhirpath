@@ -59,8 +59,8 @@ keeps them; fixing R4 would regress R5); 1 R4 signed-zero `(-0.0034).lowBoundary
   require would make the packages cyclic.
 
 ## Editor and agent support (`support.rkt`)
-Through `fhir/lang/support`: a document's diagnostics (one expression; a syntax error positioned) and
-the tool `fhirpath_evaluate`; the LSP and MCP hubs load it by collection name.
+Through `fhir/lang/support`: a document's diagnostics (one expression; a syntax error positioned);
+the language server loads it by collection name.
 
 ## Workspace support (`workspace.rkt`)
 A `.fhirpath` file is one expression: `run` evaluates it over the data source's resources of `over`
