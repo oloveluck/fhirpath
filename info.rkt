@@ -2,7 +2,7 @@
 
 (define collection "fhirpath")
 (define version "0.3")
-(define pkg-desc "FHIRPath for Racket: a from-scratch, TCK-complete engine (parser, evaluator, full UCUM, precision-aware decimals and temporals) over the fhir typed node model, with raco fhirpath")
+(define pkg-desc "FHIRPath: a from-scratch, TCK-complete engine (parser, evaluator, full UCUM, precision-aware decimals and temporals) over the fhir typed node model, with raco fhirpath")
 (define pkg-authors '(oloveluck))
 (define license 'MIT)
 (define deps '("base" "fhir" "brag-lib" "br-parser-tools-lib"))

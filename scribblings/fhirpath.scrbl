@@ -5,7 +5,7 @@
                      fhirpath/decimal fhirpath/quantity fhirpath/ucum fhirpath/temporal-ops
                      fhirpath/types))
 
-@title{fhirpath: FHIRPath for Racket}
+@title{fhirpath: FHIRPath}
 
 A @hyperlink["https://hl7.org/fhirpath/"]{FHIRPath} engine over typed FHIR resources: parser,
 evaluator, the System types (precision-aware decimals, partial dates and times, quantities with a
