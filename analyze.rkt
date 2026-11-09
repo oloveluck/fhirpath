@@ -18,7 +18,7 @@
                   fp-lit? fp-invoke? fp-invoke-target fp-invoke-name
                   fp-call? fp-call-target fp-call-name fp-call-args
                   fp-index? fp-index-target
-                  fp-binop? fp-unop? fp-unop-operand
+                  fp-binop? fp-binop-lhs fp-binop-rhs fp-unop? fp-unop-operand
                   fp-typeop? fp-typeop-operand fp-typeop-type fp-var? fp-extern?)
          (only-in "navigate.rkt" all-schema-fields)
          (only-in "types.rkt" fhir-ancestors)
@@ -59,11 +59,13 @@
     [(fp-index? ast) (infer (fp-index-target ast) T)]
     [(fp-unop? ast) (infer (fp-unop-operand ast) T)]
     [(fp-typeop? ast) (infer (fp-typeop-operand ast) T) (fp-typeop-type ast)]  ; as/ofType/is -> target
-    [(fp-binop? ast) #f]
+    ;; both operands are paths over the same input (`active = true`, `where(famly = 'x')`): checked,
+    ;; but the result's type is not modelled
+    [(fp-binop? ast) (infer (fp-binop-lhs ast) T) (infer (fp-binop-rhs ast) T) #f]
     [(fp-call? ast) (infer-call ast T)]
     [else #f]))
 
-(define projection-fns '(where select all repeat aggregate iif sort exists))
+(define projection-fns '(where select all repeat aggregate iif sort exists trace))
 (define (infer-call ast T)
   (define name (fp-call-name ast))
   (define args (fp-call-args ast))
@@ -149,6 +151,9 @@
   (check-true (ok? "Patient.name.first().subsetOf($this.name)" 'Patient)) ; eager arg sees outer type
   ;; semantic errors are caught (strict)
   (check-false (ok? "name.given1" 'Patient))                       ; unknown element
+  (check-false (ok? "activ = true" 'Patient #:strict? #f))         ; inside an operator
+  (check-false (ok? "name.where(famly = 'x')" 'Patient #:strict? #f)) ; inside a projection's operator
+  (check-true (ok? "name.where(family = 'x') | telecom.where(value.exists())" 'Patient #:strict? #f))
   (check-false (ok? "Observation.valueQuantity.exists()" 'Observation)) ; strict: direct choice access
   (check-false (ok? "(Observation.value as Period).unit" 'Observation))
   (check-false (ok? "Patient.children().skip(1)" 'Patient))        ; strict: ordered fn on unordered

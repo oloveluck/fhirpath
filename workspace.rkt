@@ -146,10 +146,13 @@
 (define workspace-support (ws-support "fhirpath" artifacts run explain))
 
 (module+ test
-  (require rackunit (only-in fhir/data-source resources->data-source))
+  (require rackunit (only-in fhir/data-source resources->data-source) (only-in fhir/diagnostic diagnostic-message))
   (define-values (ws _) (open-workspace (find-system-path 'temp-dir)))
   (define-values (as ds) (artifacts ws (list (cons "/tmp/a.fhirpath" "name.given") (cons "/tmp/b.fhirpath" "name.given("))))
   (check-equal? (length ds) 1)
+  ;; an expression that starts at a type is checked against it, without data, inside operators too
+  (define-values (_as2 ds2) (artifacts ws (list (cons "/tmp/c.fhirpath" "Patient.name.where(famly = 'Ng').given"))))
+  (check-equal? (map diagnostic-message ds2) '("no element HumanName.famly (did you mean `family`?)"))
   (define data (list (hasheq 'resourceType "Patient" 'id "a" 'name (list (hasheq 'use "official" 'given '("Ann" "B"))) 'active #t)
                      (hasheq 'resourceType "Patient" 'id "b" 'active #f)))
   (parameterize ([current-data-source (resources->data-source data)])

@@ -80,3 +80,12 @@ line's printing: every value that was not a string or boolean printed as a Racke
 (`#(struct:fp-decimal 152 0)`, `#(struct:moment date 2024 1 1 …)`); it now prints as FHIRPath writes
 it (`152`, `@2024-01-01`, `5 'mg'`, `System.Integer`).
 
+
+## Claude as the user (2026-11-09)
+`analyze.rkt` (the static pass `eval-fhirpath` runs by default) enters both operands of an operator:
+`activ = true` and `name.where(famly = 'x')` were never checked, the most common shapes an agent
+writes. `trace`'s projection argument sees its input's type (the R5 suite's
+`name.trace('test', given)` caught it). Floors unchanged: R5 1044/1044, R4 932/934. A problem's
+message names the type and suggests (`no element Patient.activ (did you mean `active`?)`);
+`render.rkt` prints values as FHIRPath writes them; the workspace reports the static problem of a
+`.fhirpath` file at its position.
