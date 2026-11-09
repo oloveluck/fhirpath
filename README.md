@@ -43,5 +43,7 @@ raco pkg install --link --auto ../fhir/fhir ../fhir/fhir-spec .   # repos side b
 raco test .
 ```
 
-Reference: [oloveluck.github.io/fhirpath](https://oloveluck.github.io/fhirpath/). Architecture:
-`CLAUDE.md`. License: MIT.
+Reference: [oloveluck.github.io/fhirpath](https://oloveluck.github.io/fhirpath/). The language for
+agents, with worked examples and the common problems: [guide.md](guide.md); the workflow without
+MCP: [.claude/skills/fhirpath](.claude/skills/fhirpath/SKILL.md). Architecture: `CLAUDE.md`.
+License: MIT.

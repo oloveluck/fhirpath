@@ -12,7 +12,7 @@
 ;;; arguments are evaluated per item, so they are listed by their text, not a value.
 ;;; An expression declares nothing, so it has no artifacts.
 
-(require racket/contract racket/list racket/string racket/match json
+(require racket/contract racket/list racket/string racket/match racket/runtime-path racket/file json
          fhir/lang/workspace
          (only-in fhir/diagnostic exn:fail:diagnostic? exn:fail:diagnostic-diagnostic)
          (only-in fhir/data-source current-data-source data-source-all data-source-read)
@@ -27,7 +27,12 @@
          (only-in "eval.rkt" eval-fhirpath)
          (only-in "value.rkt" item->system))
 
-(provide (contract-out [workspace-support ws-support?]))
+(provide (contract-out [workspace-support ws-support?]
+                       ;; guide : the language guide (guide.md) a hub serves to agents (learn://fhirpath)
+                       [guide string?]))
+
+(define-runtime-path guide-file "guide.md")
+(define guide (file->string guide-file))
 
 (define (expression text) (string-trim (regexp-replace #px"^#lang[^\n]*" text "")))
 

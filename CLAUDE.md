@@ -67,3 +67,16 @@ A `.fhirpath` file is one expression: `run` evaluates it over the data source's 
 (a type or Type/id) or of the type the expression starts with, typed by the workspace's tower (R4 for
 4.0.1); `explain` over one resource gives every sub-expression evaluated against the same input (a
 path's target, an operator's operands) with its value; function arguments are listed by text.
+
+## Documentation for users and agents
+The family's pattern (the main repo's CLAUDE.md): `guide.md` is the language for agents — cheat
+sheet, worked examples as a `raco fhirpath` transcript over two resources it shows, running it,
+common problems — provided by `fhirpath/workspace` as `guide` (fhir-mcp's `learn://fhirpath`);
+`tests/guide-test.rkt` parses every cheat-sheet line and replays the transcript through `cli.rkt`'s
+`evaluate`. `.claude/skills/fhirpath/SKILL.md` is the workflow without MCP (every command and snippet
+in it was run). `scribblings/fhirpath.scrbl` is the manual; `tests/docs-test.rkt` renders it and fails
+on a broken reference to its own sections or `fhirpath/…` bindings. Writing them fixed the command
+line's printing: every value that was not a string or boolean printed as a Racket struct
+(`#(struct:fp-decimal 152 0)`, `#(struct:moment date 2024 1 1 …)`); it now prints as FHIRPath writes
+it (`152`, `@2024-01-01`, `5 'mg'`, `System.Integer`).
+

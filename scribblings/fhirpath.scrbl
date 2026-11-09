@@ -3,7 +3,7 @@
                      fhirpath/parser/parse fhirpath/eval fhirpath/value fhirpath/print
                      fhirpath/analyze fhirpath/terminology fhirpath/environment
                      fhirpath/decimal fhirpath/quantity fhirpath/ucum fhirpath/temporal-ops
-                     fhirpath/types))
+                     fhirpath/types fhirpath/error fhirpath/workspace fhirpath/support))
 
 @title{fhirpath: FHIRPath}
 
@@ -34,11 +34,16 @@ Peter
 James
 $ raco fhirpath 'birthDate < @1980' patient.json
 true
+$ raco fhirpath 'Patient.birthDate' patient.json
+@1974-12-25
 $ raco fhirpath '(1 + 2) * 3'
 9
+$ raco fhirpath "5 'mg' + 1 'g'"
+1005 'mg'
 }|
 
-Primitives print as text, complex items as FHIR JSON. R5 by default, @litchar{--r4} for R4. A syntax
+Strings print as themselves, complex items as FHIR JSON, and any other value as FHIRPath writes it
+(@tt{152.5}, @tt{@"@"1974-12-25}, @tt{5 'mg'}). R5 by default, @litchar{--r4} for R4. A syntax
 error is positioned: @tt{<expression>:1:14: fhirpath parse error: the expression ends after `(`}.
 
 @section{Using it}
@@ -74,8 +79,8 @@ and friends work.}
 (@tt{Observation.valueQuantity}), raises a @racket['semantic] error before anything runs.
 @racket[#:strict? #f] allows the choice access, as the spec's lenient mode does.}
 @item{@bold{Errors.} A syntax error raises @racket[exn:fail:diagnostic] (@tt{fhir/diagnostic}) with
-the position; an evaluation error raises @racket[exn:fp] whose @racket[kind] is @racket['syntax],
-@racket['semantic] or @racket['execution].}]
+the position; an evaluation error raises @racket[exn:fp] (@tt{fhirpath/error}) whose
+@racket[exn:fp-kind] is @racket['syntax], @racket['semantic] or @racket['execution].}]
 
 @subsection{Command line}
 
@@ -93,6 +98,11 @@ FHIRPath error or a suite regression, 2 on usage.
 @tt{fhirpath/support} is what the family's language server (fhir-lsp) loads for FHIRPath: a
 document's diagnostics (one expression; a syntax error positioned). @tt{fhirpath/workspace} is what
 fhir-mcp runs for an agent: an expression over the data's resources, and every part of it explained.
+It also provides the repository's @tt{guide.md} (the language for agents: a cheat sheet, worked
+examples with their exact output, the common problems; its tests replay the examples) as
+@racket[guide], which fhir-mcp serves as @tt{learn://fhirpath}. Without MCP, the repository's Claude
+skill (@tt{.claude/skills/fhirpath}) gives an agent the same workflow with the command line and the
+Racket API.
 
 @section{Limits}
 
@@ -154,6 +164,24 @@ expression it cannot fully type.}
 The AST back as text, every nested binary operation parenthesized:
 @racket[(fhirpath->string (parse-fhirpath "a and b or c"))] is @racket["(a and b) or c"]. Printing
 then parsing is a fixpoint.}
+
+@subsection[#:style 'unnumbered]{@tt{fhirpath/error}}
+@defmodule[fhirpath/error]
+
+@defstruct*[(exn:fp exn:fail) ([kind (or/c 'syntax 'semantic 'execution)])]{
+An evaluation error: @racket['semantic] for what the expression asks that cannot be (an unknown
+element, function or variable; a choice read by its JSON key in strict mode), @racket['execution]
+for what the data makes impossible (a singleton expected, a bad conversion).}
+@defproc[(fp-error [kind symbol?] [message string?]) any]{Raises an @racket[exn:fp].}
+
+@subsection[#:style 'unnumbered]{@tt{fhirpath/workspace}}
+@defmodule[fhirpath/workspace]
+@defthing[workspace-support any/c]{The @tt{fhir/lang/workspace} support fhir-mcp loads for FHIRPath.}
+@defthing[guide string?]{The repository's @tt{guide.md}: the language for agents (fhir-mcp's
+@tt{learn://fhirpath}).}
+@subsection[#:style 'unnumbered]{@tt{fhirpath/support}}
+@defmodule[fhirpath/support]
+@defthing[support any/c]{The @tt{fhir/lang/support} value the language server loads.}
 
 @subsection{The environment}
 @defmodule[fhirpath/environment]

@@ -13,7 +13,10 @@
 (require json
          (only-in fhirpath/parser/parse parse-fhirpath)
          (only-in fhirpath/eval eval-fhirpath)
-         (only-in fhirpath/value item->system)
+         (only-in fhirpath/value item->system fp-long? fp-long-v fp-quantity? typeinfo? typeinfo-namespace typeinfo-name)
+         (only-in fhirpath/decimal fp-decimal? decimal->string)
+         (only-in fhirpath/quantity quantity->string)
+         (only-in fhirpath/temporal-ops value->moment moment->string)
          (only-in fhir/model/node fhir?)
          (only-in fhir/serialize/read-json read-fhir-json)
          (only-in fhir/serialize/from-json from-json)
@@ -32,13 +35,19 @@
   (define l (diagnostic-loc d))
   (struct-copy diagnostic d [loc (if l (struct-copy loc l [source source]) (loc source #f #f #f #f))]))
 
-;; render : item -> string
+;; render : item -> string   a complex item as FHIR JSON; a string as itself; any other System value
+;; as FHIRPath writes it (152.5, 2L, 5 'mg', @2024-01-01, @T10:30, System.Integer)
 (define (render v)
   (cond [(fhir? v) (jsexpr->string (node->jsexpr v))]
         [else (let ([s (item->system v)])
                 (cond [(string? s) s]
                       [(boolean? s) (if s "true" "false")]
                       [(fhir? s) (jsexpr->string (node->jsexpr s))]
+                      [(fp-decimal? s) (decimal->string s)]
+                      [(fp-quantity? s) (quantity->string s)]
+                      [(fp-long? s) (format "~aL" (fp-long-v s))]
+                      [(typeinfo? s) (format "~a.~a" (typeinfo-namespace s) (typeinfo-name s))]
+                      [(value->moment s) => moment->string]
                       [else (format "~a" s)]))]))
 
 ;; evaluate : string (or/c path-string #f) (or/c "r4" "r5") -> void
