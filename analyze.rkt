@@ -11,7 +11,8 @@
 ;;; unmodeled functions — analysis stops for that branch, so it never raises on a valid expression
 ;;; it can't fully type.
 
-(require racket/contract
+(require (only-in fhir/suggest did-you-mean)
+         racket/contract
          "error.rkt"
          (only-in "parser/ast.rkt"
                   fp-lit? fp-invoke? fp-invoke-target fp-invoke-name
@@ -106,7 +107,12 @@
             (fp-error 'semantic (format "direct access to choice element ~a.~a" T name)))
           (ftype->type (cadr entry)))]
     [(memq name framework-fields) (ftype->type (inherited-field-ftype name))]
-    [else (fp-error 'semantic (format "no element ~a.~a" T name))]))   ; (a)
+    [else (fp-error 'semantic (format "no element ~a.~a~a" T name
+                                      (did-you-mean (symbol->string name)
+                                                    (map symbol->string
+                                                         (append (map car (field-index T))
+                                                                 (filter values (map caddr (field-index T)))
+                                                                 framework-fields)))))]))   ; (a)
 
 ;; field-index of a type: (listof (list name ftype choice-base?)) over generated ancestors
 (define index-cache (make-hasheq))

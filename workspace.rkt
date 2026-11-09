@@ -12,9 +12,13 @@
 ;;; arguments are evaluated per item, so they are listed by their text, not a value.
 ;;; An expression declares nothing, so it has no artifacts.
 
-(require racket/contract racket/list racket/string racket/match racket/runtime-path racket/file json
+(require (only-in fhirpath/render item->json)
+         racket/contract racket/list racket/string racket/match racket/runtime-path racket/file json
          fhir/lang/workspace
-         (only-in fhir/diagnostic exn:fail:diagnostic? exn:fail:diagnostic-diagnostic)
+         (only-in fhir/diagnostic exn:fail:diagnostic? exn:fail:diagnostic-diagnostic diagnostic loc)
+         (only-in fhirpath/analyze analyze)
+         (only-in fhirpath/error exn:fp?)
+         (only-in fhir/model/registry type-registered?)
          (only-in fhir/data-source current-data-source data-source-all data-source-read)
          (only-in fhir/result/result ok? ok-value)
          (only-in fhir/serialize/from-json from-json)
@@ -39,12 +43,29 @@
 (define (load-tower! ws) (dynamic-require (if (workspace-r4? ws) 'fhir/r4/schemas 'fhir/r5/schemas) #f))
 
 (define (artifacts ws files)
+  (load-tower! ws)
   (values '()
           (for*/list ([f (in-list files)]
                       [d (in-value (with-handlers ([exn:fail:diagnostic? exn:fail:diagnostic-diagnostic])
-                                     (parse-fhirpath (expression (cdr f))) #f))]
+                                     (define problem (static-problem (parse-fhirpath (expression (cdr f)))))
+                                     (and problem
+                                          (diagnostic 'fhirpath 'compile 'error problem
+                                                      (loc (let ([p (car f)]) (if (path? p) (path->string p) p)) 1 1 #f #f)))))]
                       #:when d)
             d)))
+
+;; static-problem : ast -> string | #f   for an expression that starts at a type (`Observation.…`):
+;; an element that type, or a type it reaches, does not have ("no element Observation.componnt (did
+;; you mean `component`?)"), found by FHIRPath's static analysis without evaluating anything. Only
+;; that is decided here; whatever the analysis cannot follow is left to evaluation.
+(define (static-problem ast)
+  (define head (head-type ast))
+  (and head (type-registered? (string->symbol head))
+       (with-handlers ([exn:fp? (lambda (e) (and (regexp-match? #rx"no element" (exn-message e))
+                                                (regexp-replace #rx"^fhirpath: " (exn-message e) "")))]
+                       [exn:fail? (lambda (_) #f)])
+         (analyze ast (string->symbol head) #:strict? #f)
+         #f)))
 
 ;; head-type : ast -> string|#f   the type an expression starts with (`Patient` in Patient.name)
 (define (head-type ast)
@@ -75,19 +96,14 @@
   (unless (ok? n) (error 'fhirpath (format "~a/~a does not read as FHIR" (hash-ref r 'resourceType "?") (hash-ref r 'id "?"))))
   (ok-value n))
 
-;; item->json : item -> jsexpr
-(define (item->json v)
-  (cond [(fhir? v) (node->jsexpr v)]
-        [else (define s (item->system v))
-              (cond [(or (string? s) (boolean? s) (exact-integer? s)) s]
-                    [(and (real? s) (rational? s)) s]
-                    [(fhir? s) (node->jsexpr s)]
-                    [else (format "~a" s)])]))
 (define (reference r) (format "~a/~a" (hash-ref r 'resourceType "?") (hash-ref r 'id "?")))
 
 (define (run ws path text opts)
   (load-tower! ws)
   (define ast (parse-fhirpath (expression text)))
+  ;; an element the start type does not have is one error about the expression, not one per resource
+  (define problem (static-problem ast))
+  (when problem (error 'fhirpath problem))
   (define rows
     (for/list ([r (in-list (resources ast opts))])
       (hasheq 'resource (reference r)

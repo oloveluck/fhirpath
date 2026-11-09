@@ -10,7 +10,8 @@
 ;;;   raco fhirpath --ucum-tck [-v]    run the official UCUM functional tests (floor-ratcheted)
 ;;; Exit codes: 0 ok · 1 FHIRPath error / regression · 2 usage.
 
-(require json
+(require (only-in fhirpath/render item->text)
+         json
          (only-in fhirpath/parser/parse parse-fhirpath)
          (only-in fhirpath/eval eval-fhirpath)
          (only-in fhirpath/value item->system fp-long? fp-long-v fp-quantity? typeinfo? typeinfo-namespace typeinfo-name)
@@ -35,21 +36,6 @@
   (define l (diagnostic-loc d))
   (struct-copy diagnostic d [loc (if l (struct-copy loc l [source source]) (loc source #f #f #f #f))]))
 
-;; render : item -> string   a complex item as FHIR JSON; a string as itself; any other System value
-;; as FHIRPath writes it (152.5, 2L, 5 'mg', @2024-01-01, @T10:30, System.Integer)
-(define (render v)
-  (cond [(fhir? v) (jsexpr->string (node->jsexpr v))]
-        [else (let ([s (item->system v)])
-                (cond [(string? s) s]
-                      [(boolean? s) (if s "true" "false")]
-                      [(fhir? s) (jsexpr->string (node->jsexpr s))]
-                      [(fp-decimal? s) (decimal->string s)]
-                      [(fp-quantity? s) (quantity->string s)]
-                      [(fp-long? s) (format "~aL" (fp-long-v s))]
-                      [(typeinfo? s) (format "~a.~a" (typeinfo-namespace s) (typeinfo-name s))]
-                      [(value->moment s) => moment->string]
-                      [else (format "~a" s)]))]))
-
 ;; evaluate : string (or/c path-string #f) (or/c "r4" "r5") -> void
 (define (evaluate expr resource-file version)
   (dynamic-require (if (equal? version "r4") 'fhir/r4/schemas 'fhir/r5/schemas) #f)
@@ -66,7 +52,7 @@
   (define results
     (with-handlers ([exn:fail? (lambda (e) (report (diagnostic 'fhirpath 'run 'error (exn-message e) (loc "<expression>" #f #f #f #f)) expr))])
       (eval-fhirpath ast root)))
-  (for ([v (in-list results)]) (displayln (render v))))
+  (for ([v (in-list results)]) (displayln (item->text v))))
 
 (define (usage [code 2])                             ; --help: stdout, exit 0
   ((if (zero? code) printf eprintf) "usage: raco fhirpath '<expression>' [resource.json] [--r4|--r5]\n       raco fhirpath --tck [r5|r4]\n       raco fhirpath --ucum-tck [-v]\n")
