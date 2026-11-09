@@ -80,7 +80,9 @@
     (fp-error 'semantic (format "~a() on an unordered collection" name)))
   ;; recurse into arguments to catch nested errors, EXCEPT type-specifier args (is/as/ofType).
   ;; projection args see the element type Tt; ordinary (eager) args see the outer type T.
-  (unless (memq name '(is as ofType))
+  ;; repeat's projection runs at every level it reaches (`repeat(answer | item)` over a
+  ;; QuestionnaireResponse, then its items and answers): no one type to check it against
+  (unless (memq name '(is as ofType repeat))
     (define ctx (if (memq name projection-fns) Tt T))
     (for ([a (in-list args)]) (infer a ctx)))
   (cond
@@ -154,6 +156,7 @@
   (check-false (ok? "activ = true" 'Patient #:strict? #f))         ; inside an operator
   (check-false (ok? "name.where(famly = 'x')" 'Patient #:strict? #f)) ; inside a projection's operator
   (check-true (ok? "name.where(family = 'x') | telecom.where(value.exists())" 'Patient #:strict? #f))
+  (check-true (ok? "repeat(answer | item).linkId" 'QuestionnaireResponse))   ; sdcqr-2's shape
   (check-false (ok? "Observation.valueQuantity.exists()" 'Observation)) ; strict: direct choice access
   (check-false (ok? "(Observation.value as Period).unit" 'Observation))
   (check-false (ok? "Patient.children().skip(1)" 'Patient))        ; strict: ordered fn on unordered
