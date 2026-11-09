@@ -18,7 +18,7 @@ conversion), `types.rkt` (FHIR ancestry from the registry + System lattice + is/
 (`$this/$index/$total`, `%` externals, defineVariable via a shared mutable scope), `eval.rkt`.
 
 Data-driven conformance harness in `fhirpath/tests/` runs the official HL7 suites:
-`raco fhir fhirpath-tck r5` (1044) / `... r4` (934). Current: **R5 1044/1044, R4 932/934** — 100% of
+`raco fhirpath --tck r5` (1044) / `... r4` (934). Current: **R5 1044/1044, R4 932/934** — 100% of
 in-scope tests. Each run requires the matching full tower (`run-r5` requires `fhir/r5/schemas`);
 `tests/vendor/` has the suite XML + `.g4`, `tests/inputs*/` the JSON resources.
 The modules carry their own `module+ test`s. Input loading is **lenient** (`from-json
