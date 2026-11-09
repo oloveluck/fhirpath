@@ -10,3 +10,6 @@ Untitled.rkt
 
 # macOS
 .DS_Store
+
+# the manual, built by raco setup
+doc/
