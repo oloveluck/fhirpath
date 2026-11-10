@@ -18,6 +18,7 @@
  (struct-out moment)
  (contract-out
   [parse-fp-date     (-> string? (or/c moment? #f))]
+  [calendar-problem  (-> (or/c moment? #f) (or/c string? #f))]
   [parse-fp-datetime (-> string? (or/c moment? #f))]
   [parse-fp-time     (-> string? (or/c moment? #f))]
   [value->moment     (-> any/c (or/c moment? #f))]
@@ -186,6 +187,14 @@
             (+ e (- (quotient (+ (* 153 mm) 2) 5)) 1))))
 
 (define (days-in-month y m) (let-values ([(y2 m2 d2) (jdn->ymd (sub1 (ymd->jdn y (if (= m 12) 1 (add1 m)) 1)))]) d2))
+;; calendar-problem : moment|#f -> string|#f   why a moment names no day of the calendar
+;; ("1940-02 has 29 days"): the literal grammar allows day 31 in every month
+(define (calendar-problem m)
+  (and m (moment-year m) (moment-month m) (moment-day m) (<= 1 (moment-month m) 12)
+       (> (moment-day m) (days-in-month (moment-year m) (moment-month m)))
+       (format "~a-~a has ~a days" (moment-year m)
+               (if (< (moment-month m) 10) (format "0~a" (moment-month m)) (moment-month m))
+               (days-in-month (moment-year m) (moment-month m)))))
 (define (clamp-day y m d) (min d (days-in-month y m)))
 
 ;; add n units (calendar or time) to a moment, respecting its precision.

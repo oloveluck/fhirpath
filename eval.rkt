@@ -19,7 +19,7 @@
          (only-in "functions.rkt" apply-function)
          (only-in "decimal.rkt" parse-decimal integer->decimal)
          (only-in "quantity.rkt" make-quantity)
-         (only-in "temporal-ops.rkt" parse-fp-date parse-fp-datetime parse-fp-time))
+         (only-in "temporal-ops.rkt" parse-fp-date parse-fp-datetime parse-fp-time calendar-problem))
 
 (provide (contract-out
           [eval-fhirpath (->* (any/c list?) (#:externals hash? #:strict? boolean?) list?)]
@@ -90,9 +90,17 @@
     [(string? v) (list v)]
     [(dec-lit? v) (list (parse-decimal (dec-lit-lexeme v)))]
     [(qty-lit? v) (list (make-quantity (num->dec (qty-lit-number v)) (qty-lit-unit v)))]
-    [(date-lit? v) (let ([m (parse-fp-date (date-lit-str v))]) (if m (list m) '()))]
-    [(datetime-lit? v) (let ([m (parse-fp-datetime (datetime-lit-str v))]) (if m (list m) '()))]
+    [(date-lit? v) (calendar-checked (parse-fp-date (date-lit-str v)) (date-lit-str v))]
+    [(datetime-lit? v) (calendar-checked (parse-fp-datetime (datetime-lit-str v)) (datetime-lit-str v))]
     [(time-lit? v) (let ([m (parse-fp-time (time-lit-str v))]) (if m (list m) '()))]
     [else (list v)]))
+
+;; calendar-checked : moment|#f string -> (listof moment)   a literal naming a day its month lacks
+;; (@1940-02-30) is an error, not an empty collection
+(define (calendar-checked m text)
+  (cond [(calendar-problem m)
+         => (lambda (why) (fp-error 'semantic (format "@~a names no day: ~a" text why)))]
+        [m (list m)]
+        [else '()]))
 
 (define (num->dec n) (if (dec-lit? n) (parse-decimal (dec-lit-lexeme n)) (integer->decimal n)))

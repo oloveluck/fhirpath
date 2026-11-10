@@ -90,3 +90,8 @@ it reaches (US Core's sdcqr-2, `repeat(answer | item)`, caught that). Floors unc
 message names the type and suggests (`no element Patient.activ (did you mean `active`?)`);
 `render.rkt` prints values as FHIRPath writes them; the workspace reports the static problem of a
 `.fhirpath` file at its position.
+
+## A day the calendar lacks (2026-11-10)
+`@1940-02-30` is an error (`calendar-problem` in temporal-ops.rkt, raised by eval's literal), and
+`'1940-02-30'.toDate()` is empty: the literal grammar allows day 31 in every month. R5 1044/1044, R4
+932/934 unchanged.

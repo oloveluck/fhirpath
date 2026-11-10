@@ -31,7 +31,7 @@
          (only-in "equality.rkt" item=? item-equiv?)
          (only-in "decimal.rkt" fp-decimal? parse-decimal integer->decimal decimal->exact
                   decimal->string decimal-round decimal-precision fp-decimal decimal-cmp)
-         (only-in "temporal-ops.rkt" value->moment moment? moment-kind moment->string parse-fp-date
+         (only-in "temporal-ops.rkt" value->moment moment? moment-kind moment->string parse-fp-date calendar-problem
                   parse-fp-datetime parse-fp-time moment moment-year moment-month moment-day
                   moment-compare moment-prec moment-frac moment-boundary)
          (only-in "quantity.rkt" make-quantity quantity->string calendar-unit? quantity-compare)
@@ -525,13 +525,13 @@
   (cond [(and (moment? v) (eq? (moment-kind v) 'date)) v]
         [(and (moment? v) (eq? (moment-kind v) 'dateTime))
          (moment 'date (moment-year v) (moment-month v) (moment-day v) #f #f #f #f #f 3)]
-        [(string? v) (or (parse-fp-date (strip@ v)) 'no)]
+        [(string? v) (let ([m (parse-fp-date (strip@ v))]) (if (and m (not (calendar-problem m))) m 'no))]
         [else 'no]))
 ;; ->datetime : Converter
 (define (->datetime x)
   (define v (item->system x))
   (cond [(and (moment? v) (memq (moment-kind v) '(date dateTime))) v]
-        [(string? v) (or (parse-fp-datetime (strip@ v)) 'no)]
+        [(string? v) (let ([m (parse-fp-datetime (strip@ v))]) (if (and m (not (calendar-problem m))) m 'no))]
         [else 'no]))
 ;; ->time : Converter
 (define (->time x)
