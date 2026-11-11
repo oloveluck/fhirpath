@@ -9,6 +9,7 @@
 ;;; (Cel, [degF], pH, …) are reported as non-canonicalizable (#f).
 
 (require racket/contract racket/list racket/string racket/runtime-path
+         (only-in fhir/suggest did-you-mean)
          (only-in xml read-xml document-element element? element-name element-content
                   element-attributes attribute-name attribute-value pcdata? pcdata-string
                   entity? entity-text))
@@ -21,6 +22,10 @@
   ;; syntactic + atom validity, INDEPENDENT of canonicalizability: a special (function) unit
   ;; like Cel/[degF]/[pH] is valid UCUM even though it has no linear canonical form
   [ucum-valid?       (-> string? boolean?)]
+  ;; ucum-suggestion : code -> string   for a code that is not UCUM, what to write instead, as the end
+  ;; of a message: " (did you mean `ms`?)", or " (mercury is written mm[Hg])" — the validator, FSH
+  ;; and CQL say the same
+  [ucum-suggestion   (-> string? string?)]
   ;; the official suite's displayNameGeneration: "m" -> "(meter)", "m3.kg-1" ->
   ;; "(meter ^ 3) * (kilogram ^ -1)"; #f when an atom has no name in the essence
   [ucum-display      (-> string? (or/c string? #f))]))
@@ -339,6 +344,29 @@
 (define (ucum-convert value u1 u2)
   (define a (ucum-canonical u1)) (define b (ucum-canonical u2))
   (and a b (equal? (cdr a) (cdr b)) (/ (* value (car a)) (car b))))
+
+;; common-units : clinical units, the names a misspelt one is matched against
+(define common-units
+  '("mm[Hg]" "kg" "g" "mg" "ug" "mg/dL" "g/dL" "g/L" "mmol/L" "umol/L" "mmol/mol" "%" "/min" "cm" "m" "mm"
+    "kg/m2" "[in_i]" "[lb_av]" "Cel" "[degF]" "mL" "L" "h" "min" "s" "ms" "d" "wk" "mo" "a" "10*3/uL" "10*9/L"
+    "U/L" "[IU]/L" "mL/min/{1.73_m2}" "mL/min" "/[HPF]" "{beats}/min" "{breaths}/min" "kPa" "mosm/kg" "ng/mL" "pg/mL"))
+;; ucum-spellings : common clinical spellings that are not UCUM, with the UCUM code each means
+(define ucum-spellings
+  '(("msec" . "ms") ("millisec" . "ms") ("millisecond" . "ms") ("milliseconds" . "ms")
+    ("sec" . "s") ("secs" . "s") ("second" . "s") ("seconds" . "s")
+    ("mins" . "min") ("minute" . "min") ("minutes" . "min") ("hr" . "h") ("hrs" . "h") ("hour" . "h") ("hours" . "h")
+    ("day" . "d") ("days" . "d") ("week" . "wk") ("weeks" . "wk") ("year" . "a") ("years" . "a") ("yr" . "a") ("yrs" . "a")
+    ("bpm" . "/min") ("beats/min" . "/min") ("breaths/min" . "/min") ("/minute" . "/min")
+    ("kgs" . "kg") ("lbs" . "[lb_av]") ("lb" . "[lb_av]") ("in" . "[in_i]") ("inch" . "[in_i]")
+    ("degc" . "Cel") ("°c" . "Cel") ("c" . "Cel") ("degf" . "[degF]") ("°f" . "[degF]")
+    ("mmol/mol" . "mmol/mol") ("percent" . "%") ("cc" . "mL") ("ml" . "mL")
+    ("ml/min/1.73m2" . "mL/min/{1.73_m2}") ("ml/min/1.73 m2" . "mL/min/{1.73_m2}") ("ml/min/1.73m^2" . "mL/min/{1.73_m2}")))
+(define (ucum-suggestion code)
+  (define known (assoc (string-downcase code) ucum-spellings))
+  (define near (if known (format " (did you mean `~a`?)" (cdr known)) (did-you-mean code (filter ucum-valid? common-units))))
+  (cond [(not (equal? near "")) near]
+        [(regexp-match? #rx"(?i:hg)" code) " (mercury is written mm[Hg])"]
+        [else " (see https://ucum.org/ucum for its syntax)"]))
 
 (module+ test
   (require rackunit)
