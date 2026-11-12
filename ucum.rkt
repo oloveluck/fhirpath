@@ -360,7 +360,11 @@
     ("kgs" . "kg") ("lbs" . "[lb_av]") ("lb" . "[lb_av]") ("in" . "[in_i]") ("inch" . "[in_i]")
     ("degc" . "Cel") ("°c" . "Cel") ("c" . "Cel") ("degf" . "[degF]") ("°f" . "[degF]")
     ("mmol/mol" . "mmol/mol") ("percent" . "%") ("cc" . "mL") ("ml" . "mL")
-    ("ml/min/1.73m2" . "mL/min/{1.73_m2}") ("ml/min/1.73 m2" . "mL/min/{1.73_m2}") ("ml/min/1.73m^2" . "mL/min/{1.73_m2}")))
+    ("ml/min/1.73m2" . "mL/min/{1.73_m2}") ("ml/min/1.73 m2" . "mL/min/{1.73_m2}") ("ml/min/1.73m^2" . "mL/min/{1.73_m2}")
+    ;; milliequivalents and international units, as labs write them (potassium, sodium: mEq/L = mmol/L
+    ;; for a monovalent ion; UCUM's atoms are lower-case eq and bracketed [IU])
+    ("meq/l" . "meq/L") ("meq" . "meq") ("eq/l" . "eq/L") ("iu" . "[IU]") ("iu/l" . "[IU]/L")
+    ("iu/ml" . "[IU]/mL") ("miu/l" . "m[IU]/L") ("miu/ml" . "m[IU]/mL") ("uiu/ml" . "u[IU]/mL")))
 (define (ucum-suggestion code)
   (define known (assoc (string-downcase code) ucum-spellings))
   (define near (if known (format " (did you mean `~a`?)" (cdr known)) (did-you-mean code (filter ucum-valid? common-units))))
