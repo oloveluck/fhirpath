@@ -1,49 +1,38 @@
 # fhirpath — FHIRPath
 
-A [FHIRPath](https://hl7.org/fhirpath/) engine with full UCUM unit support, over FHIR R4 and R5
-resources. It passes HL7's official suites; [TESTING.md](TESTING.md) has the details.
-
-Part of the [fhir](https://github.com/oloveluck/fhir) family of FHIR languages and tools.
-
-## Command line
-
-[Build the family's tools](https://github.com/oloveluck/fhir#getting-the-tools) once and put
-`dist/bin` on your `PATH`; they run without Racket. With Racket installed, `raco fhirpath` is the same.
-
-```sh
-fhirpath 'Patient.name.given' patient.json           # R5, the default
-fhirpath 'Patient.name.given.first()' patient.json --r4
-fhirpath '1 + 2 * 3'
-```
+[FHIRPath](https://hl7.org/fhirpath/) is FHIR's small language for asking a question of one
+resource: "the patient's official given names", "is this patient an adult". FHIR itself uses it
+wherever a rule has to point inside a resource: the invariants of a profile, search parameters,
+mapping rules, the columns of a view. This package evaluates it. You give an expression and a
+resource as JSON and get the answer, which is always a list of values; a mistake in the expression
+is reported at its place.
 
 ```
-$ fhirpath 'Patient.name.given' patient.json
+$ fhirpath "Patient.name.where(use = 'official').given" patient.json
 Peter
 James
+$ fhirpath "Patient.birthDate < today() - 18 years" patient.json
+true
 ```
 
-Each result is on its own line. A syntax error points at its column, with exit status 1.
+It reads FHIR R4 and R5 resources and understands units of measure (UCUM), so
+`1 'kg' = 1000 'g'` is true.
 
-## In Racket
+## Install
 
-```racket
-#lang racket/base
-(require (only-in fhir/r5/schemas) fhir/serialize/from-json fhir/result/result
-         fhirpath/parser/parse fhirpath/eval fhirpath/value)
+Build the [fhir family's tools](https://github.com/oloveluck/fhir#install) once; `fhirpath` is one
+of them. With Racket, `raco fhirpath` is the same command.
 
-(define patient (ok-value (from-json (hasheq 'resourceType "Patient"
-                                             'name (list (hasheq 'given (list "Peter" "James")))))))
-(map item->system (eval-fhirpath (parse-fhirpath "Patient.name.given") (list patient)))  ; '("Peter" "James")
-```
+## Documentation
 
-## Develop
+**[oloveluck.github.io/fhirpath](https://oloveluck.github.io/fhirpath/)**: a first example explained
+step by step, how to write an expression, where FHIR uses the language, using it from a program, and
+the reference.
 
-```sh
-raco pkg install --link --auto ../fhir/fhir ../fhir/fhir-spec .   # repos side by side
-raco test .
-```
+- How well it works (HL7's FHIRPath suites: all 1044 tests for R5, 932 of 934 for R4; all 573 of
+  UCUM's): [TESTING.md](TESTING.md).
+- For AI agents: [guide.md](guide.md), a cheat sheet and worked examples, each one tested; and the
+  [fhirpath skill](.claude/skills/fhirpath/SKILL.md).
+- How it is built: [CLAUDE.md](CLAUDE.md).
 
-Reference: [oloveluck.github.io/fhirpath](https://oloveluck.github.io/fhirpath/). The language for
-agents, with worked examples and the common problems: [guide.md](guide.md); the workflow without
-MCP: [.claude/skills/fhirpath](.claude/skills/fhirpath/SKILL.md). Architecture: `CLAUDE.md`.
-License: MIT.
+Part of the [fhir](https://github.com/oloveluck/fhir) family. License: MIT.
