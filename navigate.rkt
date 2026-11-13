@@ -23,7 +23,8 @@
  (contract-out
   [navigate       (-> list? symbol? list?)]        ; a collection . member -> a collection
   [node-children  (-> any/c list?)]                ; all immediate children (for children()/descendants)
-  [all-schema-fields (-> symbol? (listof any/c))]))
+  [all-schema-fields (-> symbol? (listof any/c))]
+  [resource-type-name? (-> symbol? boolean?)]))    ; a registered resource type's name
 
 (define (navigate coll name)
   (append-map (lambda (item) (navigate-one item name)) coll))
@@ -39,7 +40,9 @@
        ;; Condition (FHIR's own SearchParameters and invariants are written this way)
        [(or (eq? name type) (and (memq name (fhir-ancestors type)) (memq (quote Resource) (fhir-ancestors name))))
         (list item)]
-       ;; a leading resource-type name that doesn't match the context is a semantic error
+       ;; a leading resource-type name that doesn't match the context is a semantic error (HL7's
+       ;; testSimpleWithWrongContext) — except as the head of a `|` operand, which eval.rkt
+       ;; evaluates as a selection by type (`union-branch`) and never brings here
        [(resource-type-name? name) (fp-error 'semantic (format "~a is not the context (~a)" name type))]
        [else
         ;; value[x] choice: collect present expanded members whose choice-base is `name`.

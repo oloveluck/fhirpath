@@ -85,7 +85,13 @@ fhirpath "(1 + 2) * 3"                              # no resource: over the empt
 fhirpath "Patient.name.given.first(" --format json  # an error as JSON (or outcome: an OperationOutcome)
 ```
 A syntax error is positioned (`<expression>:1:25: fhirpath parse error: the expression ends after
-`(``); exit status 1 on any error.
+`(``); exit status 1 on any error. FHIRPath is one expression: a second one after `;` is a syntax
+error at the `;`, and an empty text is `the expression is empty`.
+
+A search parameter that serves several types is one expression, a union of paths each beginning
+with its type: `fhirpath "Patient.name.given | Practitioner.name.given" patient.json` prints the
+patient's given names (the Practitioner part gives nothing over a Patient). Only as a part of a
+`|`: on its own, `Practitioner.name.given` over a Patient is `no element Patient.Practitioner`.
 
 **From Racket.** `(eval-fhirpath (parse-fhirpath text) (list resource))` over a typed resource
 (`fhir/serialize/from-json`), after loading a version tower (`fhir/r4/schemas` or

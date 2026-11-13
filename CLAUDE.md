@@ -95,3 +95,32 @@ message names the type and suggests (`no element Patient.activ (did you mean `ac
 `@1940-02-30` is an error (`calendar-problem` in temporal-ops.rkt, raised by eval's literal), and
 `'1940-02-30'.toDate()` is empty: the literal grammar allows day 31 in every month. R5 1044/1044, R4
 932/934 unchanged.
+
+## One expression; unions over several types (2026-11-13)
+Found writing the manual, each with a test that fails without the fix:
+- **Several expressions, or none, are parse diagnostics** (parser/parse.rkt). `parse-fhirpath "1 = 1; 2"`
+  raised a plain `exn:fail` (a stack trace at the command line): it is `unexpected `;`: one
+  expression is expected, this is 2`, positioned at the first `;` (`separator-loc`, from the token
+  stream; the grammar's `fp-program` still reads `;`, for `parse-fhirpath-program`). A text with no
+  token (nothing, space, a comment) is `the expression is empty` (it was brag's `unexpected
+  no-tokens `#f``), from `parse-fhirpath-program`, so every caller gets it. At the command line both
+  exit 1: an argument was given and its text is the problem, so they are reported like any syntax
+  error (`--format json` too); no argument at all is the usage, exit 2.
+- **A `|` operand rooted at another resource type** (analyze.rkt, eval.rkt). FHIR writes a search
+  parameter that serves several types as ONE expression (`Patient.name.given |
+  Practitioner.name.given`); over a Patient it was `no element Patient.Practitioner`. The head of a
+  union operand (`path-head`: seen through steps, functions, indexers, `as`), when it names a
+  resource type, selects the input of that type: the evaluator runs the operand with the head as
+  `ofType(<Type>)` (`union-branch`, an AST rewrite in eval's union clause — the rest of the path runs
+  over the empty collection, so `Practitioner.name.exists()` is false), and the static pass checks
+  the operand against the type it names (`branch-type`: `Practitioner.nmae` in the other branch is
+  still `no element Practitioner.nmae`). ONLY in a union: HL7's suite requires `Encounter.name.given`
+  over a Patient to be a semantic error (testSimpleWithWrongContext, R4 and R5, strict mode — every
+  mode here), so a foreign head anywhere else is the error it was, and so is a name that is neither
+  a type nor an element (`no element Patient.activ (did you mean `active`?)`).
+  `tests/search-parameters-test.rkt` is the oracle: every R5 core SearchParameter expression against
+  each of its bases — 794 of 1980 pairs were refused, 26 are now, all the package's own (`date`
+  writes Appointment's branch without its type, `(start | requestedPeriod.start).first()`); R4: 369
+  of 1715 before, 1 now (the example parameter `part-agree`, whose base is not its expression's type).
+- `tests/cli-test.rkt` runs the three through `raco fhirpath`. Floors unchanged: R5 1044/1044, R4
+  932/934, UCUM 573/573.

@@ -7,8 +7,10 @@
 ;;; `syntax` invalid-test outcome).
 
 (require racket/contract
-         (only-in brag/support token srcloc-token? srcloc-token-token token-struct-type token-struct-val token-struct? token-struct-skip? token-struct-offset)
-         (only-in fhir/diagnostic raise-diagnostic exn->diagnostic exn:fail:diagnostic? tokens->last-position error-position)
+         (only-in brag/support token srcloc-token? srcloc-token-token token-struct-type token-struct-val token-struct? token-struct-skip? token-struct-offset
+                  token-struct-line token-struct-column token-struct-span)
+         (only-in fhir/diagnostic raise-diagnostic exn->diagnostic exn:fail:diagnostic? tokens->last-position error-position
+                  diagnostic loc)
          (prefix-in g: "grammar.rkt")
          "lexer.rkt"
          "ast.rkt")
@@ -20,20 +22,38 @@
 
 ;; Memoized: the same expressions (invariants, search params, navigation) are parsed thousands of times
 ;; by the validator and capability search. ASTs are immutable prefab values, so sharing is safe.
+;; FHIRPath is ONE expression: several separated by `;` are a parse error at the first `;`.
 (define parse-cache (make-hash))
 (define (parse-fhirpath str)
   (hash-ref! parse-cache str
              (lambda ()
                (define program (parse-fhirpath-program str))
-               (cond
-                 [(null? program) (error 'parse-fhirpath "empty expression")]
-                 [(null? (cdr program)) (car program)]
-                 [else (error 'parse-fhirpath "expected a single expression, got ~a" (length program))]))))
+               (if (null? (cdr program))
+                   (car program)
+                   (raise-diagnostic
+                    (diagnostic 'fhirpath 'parse 'error
+                                (format "unexpected `;`: one expression is expected, this is ~a" (length program))
+                                (separator-loc (lex str))))))))
+
+;; lex : string -> (listof token)   every token of the text, skipped ones (space, comments) included
+(define (lex str) (collect (tokenize (open-input-string str))))
+
+;; separator-loc : (listof token) -> loc|#f   where the first `;` stands (the grammar has `;` between
+;; the expressions of a program only; one inside a string is part of a STRING token)
+(define (separator-loc toks)
+  (for/first ([t (in-list toks)]
+              #:when (let ([k (probe-token t)]) (and k (equal? (format "~a" (token-struct-type k)) ";"))))
+    (define k (probe-token t))
+    (loc #f (token-struct-line k) (let ([c (token-struct-column k)]) (and c (add1 c)))
+         (token-struct-offset k) (token-struct-span k))))
 
 ;; a syntax error raises exn:fail:diagnostic (fhir/diagnostic): positioned, "the expression ends
-;; after `x`" when the input runs out
+;; after `x`" when the input runs out; a text with no token at all (nothing, space, a comment) is
+;; "the expression is empty" (brag's own words for it were "unexpected no-tokens `#f`")
 (define (parse-fhirpath-program str)
-  (define toks (collect (tokenize (open-input-string str))))
+  (define toks (lex str))
+  (unless (ormap probe-token toks)
+    (raise-diagnostic (diagnostic 'fhirpath 'parse 'error "the expression is empty" #f)))
   (with-handlers ([(lambda (e) (and (exn:fail? e) (not (exn:fail:diagnostic? e))))
                    (lambda (e)
                      (define last-pos (tokens->last-position toks real-position))
@@ -105,4 +125,14 @@
   (define (diag s) (with-handlers ([exn:fail:diagnostic? (lambda (e) (diagnostic->string (exn:fail:diagnostic-diagnostic e)))]) (parse-fhirpath s) #f))
   (check-equal? (diag "Patient.name.where(") "<input>:1:19: fhirpath parse error: the expression ends after `(`")
   (check-equal? (diag "Patient.name.where(use = )") "<input>:1:26: fhirpath parse error: unexpected `)`")
-  (check-equal? (diag "Patient.name ## x") "<input>:1:14: fhirpath lex error: unrecognized text `#`"))
+  (check-equal? (diag "Patient.name ## x") "<input>:1:14: fhirpath lex error: unrecognized text `#`")
+  ;; one expression: a second one after `;` is a parse error at the `;` (it was a plain exn:fail, a
+  ;; stack trace at the command line); a `;` inside a string is text
+  (check-equal? (diag "1 = 1; 2") "<input>:1:6: fhirpath parse error: unexpected `;`: one expression is expected, this is 2")
+  (check-equal? (diag "name;\n given; 3") "<input>:1:5: fhirpath parse error: unexpected `;`: one expression is expected, this is 3")
+  (check-equal? (parse-fhirpath "'a; b'") (fp-lit "a; b"))
+  (check-equal? (diag "1 = 1;") "<input>:1:6: fhirpath parse error: the expression ends after `;`")
+  ;; no expression at all (it was "unexpected no-tokens `#f`")
+  (check-equal? (diag "") "fhirpath parse error: the expression is empty")
+  (check-equal? (diag "  \n") "fhirpath parse error: the expression is empty")
+  (check-equal? (diag "// only a comment") "fhirpath parse error: the expression is empty"))

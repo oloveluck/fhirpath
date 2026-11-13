@@ -24,8 +24,13 @@ This skill is the workflow around it.
    ```
    <expression>:1:25: fhirpath parse error: the expression ends after `(`
    ```
+   FHIRPath is one expression: a second one after `;` is a syntax error at the `;`, an empty text
+   is `the expression is empty`.
    The type check runs before evaluation, so `no element Patient.nmae` and `direct access to choice
-   element Observation.valueQuantity` are errors, not empty answers. `--format json` (or `outcome`)
+   element Observation.valueQuantity` are errors, not empty answers. A search parameter of several
+   types (`Patient.name.given | Practitioner.name.given`) runs over a resource of one of them: the
+   other types' parts of the union give nothing (on its own, `Practitioner.name.given` over a
+   Patient is still `no element Patient.Practitioner`). `--format json` (or `outcome`)
    writes the diagnostic as JSON (an OperationOutcome) on stdout.
 3. **Empty answer?** Nothing printed means the empty collection. Cut the expression back from the end
    until something prints; the step after that reads an element that is absent (or a choice read

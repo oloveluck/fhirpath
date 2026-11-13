@@ -288,8 +288,15 @@ this engine.}
 @item{@bold{Search parameters.} A search such as @tt{Patient?given=Peter} works because FHIR
 defines the parameter @tt{given} for patients as the expression @fp{Patient.name.given}: a server
 evaluates it over each stored resource and indexes what comes out. A parameter that serves several
-types is written with a bar between them (@fp{Patient.name.given | Practitioner.name.given}); try
-the part for your resource's type.}
+types is written with a bar between them, each part beginning with its type. Over a resource of
+one of the types, the parts for the others give nothing:
+@verbatim|{
+$ raco fhirpath "Patient.name.given | Practitioner.name.given" patient.json
+Peter
+James
+Jim
+}|
+(The bar is a union, so a name that appears twice is given once.)}
 @item{@bold{Mapping rules.} In the FHIR Mapping Language the condition of a rule is FHIRPath:
 @fp{src.item as item where (linkId = 'gender')}
 (@hyperlink["https://oloveluck.github.io/fml/"]{fml}).}
@@ -330,6 +337,17 @@ An error is reported as text by default. @litchar{--format json} writes it as JS
 @litchar{--format outcome} as a FHIR OperationOutcome, for a program to read. The command exits
 with 0 when all is well, 1 on a FHIRPath error (or when a test suite does worse than before), and 2
 when it was called wrongly or cannot read the file.
+
+FHIRPath is one expression. Two of them, or none, are syntax errors like any other:
+
+@verbatim|{
+$ raco fhirpath "Patient.name.given; Patient.birthDate" patient.json
+<expression>:1:19: fhirpath parse error: unexpected `;`: one expression is expected, this is 2
+ 1 | Patient.name.given; Patient.birthDate
+   |                   ^
+$ raco fhirpath "" patient.json
+<expression>: fhirpath parse error: the expression is empty
+}|
 
 @subsection[#:tag "racket"]{From Racket}
 
@@ -414,9 +432,10 @@ names, not that it meets a profile's rules. Use the validator for that.}
 @item{@bold{The check before running is cautious.} It stops as soon as it no longer knows the type
 it is looking at (after @fp{resolve()}, a step that can be several types, or a function it does not
 model). So it never refuses a valid expression of that kind, and it does not catch every mistake.}
-@item{@bold{A path through another type} is refused: over a Patient,
-@fp{Patient.name.given | Practitioner.name.given} is the error @tt{no element Patient.Practitioner}.
-Evaluate the part for the resource's own type.}
+@item{@bold{A path through another type} gives nothing only as a part of a union, the way search
+parameters are written (@fp{Patient.name.given | Practitioner.name.given} over a Patient). On its
+own it is refused, as HL7's suite expects: over a Patient, @fp{Practitioner.name.given} is the
+error @tt{no element Patient.Practitioner}.}
 @item{@bold{Two cases of HL7's R4 suite fail on purpose.} Adding a fraction of a second to a time
 (@fp{@"@"T… + 0.1 's'}): R4 drops the fraction and R5 keeps it, and the engine follows R5. And
 @fp{(-0.0034).lowBoundary(1)} is expected to be @tt{-0.0}; decimals here have no negative zero.}]
@@ -473,11 +492,13 @@ For programmers: the modules of the package and what each provides.
 @defmodule[fhirpath/parser/parse]
 
 @defproc[(parse-fhirpath [str string?]) any/c]{
-One expression to its AST (immutable prefab structs). An empty string or a program of several
-expressions is an error.}
+One expression to its AST (immutable prefab structs). A text with no expression in it ("the
+expression is empty") or with several separated by @tt{;} (positioned at the first @tt{;}) is a
+syntax error: it raises @racket[exn:fail:diagnostic], as any other does.}
 @defproc[(parse-fhirpath-program [str string?]) list?]{
-A @tt{;}-separated program to a list of ASTs. A syntax error raises @racket[exn:fail:diagnostic]
-with the position, and "the expression ends after @tt{(}" when the input ran out.}
+A @tt{;}-separated program to a list of ASTs, at least one. A syntax error raises
+@racket[exn:fail:diagnostic] with the position, "the expression ends after @tt{(}" when the input
+ran out, and "the expression is empty" when there is nothing to parse.}
 
 @subsection[#:style 'unnumbered]{@tt{fhirpath/eval}}
 @defmodule[fhirpath/eval]
@@ -500,7 +521,18 @@ The static pass: raises a @racket['semantic] error for an element the type does 
 nearest name), a string function applied to a complex type, an order-dependent function on an
 unordered source, and in strict mode an expanded choice access. It looks inside both operands of an
 operator and inside function arguments such as @tt{where}'s. It stops wherever the type becomes
-unknown, so it never rejects a valid expression it cannot fully type.}
+unknown, so it never rejects a valid expression it cannot fully type. A part of a union (@tt{|})
+that begins with another resource type's name is checked against that type, as a search parameter
+of several types is written; anywhere else such a name is an element the type does not have.}
+@defproc[(path-head [ast any/c]) (or/c symbol? #f)]{
+The name a path begins with, seen through the steps, functions, indexers and type operators applied
+to it (@racket['Practitioner] for @fp{Practitioner.name.where(use = 'official')[0]}); @racket[#f]
+for an expression that does not begin with a name.}
+@defproc[(union-branch [ast any/c]) any/c]{
+A part of a union as the evaluator runs it: when it begins with a resource type's name, that name
+selects the input of that type (@fp{Practitioner.name.given} becomes
+@fp{ofType(Practitioner).name.given}), so over a resource of another type the part is empty and
+the rest of its path runs over nothing. Any other expression is returned as it is.}
 
 @subsection[#:style 'unnumbered]{@tt{fhirpath/print}}
 @defmodule[fhirpath/print]

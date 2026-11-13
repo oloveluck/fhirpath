@@ -17,10 +17,11 @@
          (only-in "parser/ast.rkt"
                   fp-lit? fp-invoke? fp-invoke-target fp-invoke-name
                   fp-call? fp-call-target fp-call-name fp-call-args
-                  fp-index? fp-index-target
-                  fp-binop? fp-binop-lhs fp-binop-rhs fp-unop? fp-unop-operand
-                  fp-typeop? fp-typeop-operand fp-typeop-type fp-var? fp-extern?)
-         (only-in "navigate.rkt" all-schema-fields)
+                  fp-index? fp-index-target fp-index-idx fp-typeop-op
+                  fp-binop? fp-binop-op fp-binop-lhs fp-binop-rhs fp-unop? fp-unop-operand
+                  fp-typeop? fp-typeop-operand fp-typeop-type fp-var? fp-extern?
+                  fp-invoke fp-call fp-index fp-typeop)
+         (only-in "navigate.rkt" all-schema-fields resource-type-name?)
          (only-in "types.rkt" fhir-ancestors)
          (only-in fhir/model/registry type-schema-of type-registered?)
          (only-in fhir/model/schema
@@ -28,7 +29,9 @@
                   schema-field-choice-base ftype-tag ftype-prim-code ftype-type-name
                   inherited-field-names inherited-field-ftype))
 
-(provide (contract-out [analyze (->* (any/c (or/c symbol? #f)) (#:strict? boolean?) void?)]))
+(provide (contract-out [analyze (->* (any/c (or/c symbol? #f)) (#:strict? boolean?) void?)]
+                       [path-head (-> any/c (or/c symbol? #f))]
+                       [union-branch (-> any/c any/c)]))
 
 ;; strict mode flags direct access to an expanded choice member (Observation.valueQuantity) as a
 ;; semantic error; mode="lenient/polymorphics" allows it.
@@ -60,8 +63,13 @@
     [(fp-unop? ast) (infer (fp-unop-operand ast) T)]
     [(fp-typeop? ast) (infer (fp-typeop-operand ast) T) (fp-typeop-type ast)]  ; as/ofType/is -> target
     ;; both operands are paths over the same input (`active = true`, `where(famly = 'x')`): checked,
-    ;; but the result's type is not modelled
-    [(fp-binop? ast) (infer (fp-binop-lhs ast) T) (infer (fp-binop-rhs ast) T) #f]
+    ;; but the result's type is not modelled. An operand of `|` rooted at ANOTHER resource type is
+    ;; checked against that type (see `branch-type`)
+    [(fp-binop? ast)
+     (define union? (eq? (fp-binop-op ast) 'union))
+     (for ([operand (in-list (list (fp-binop-lhs ast) (fp-binop-rhs ast)))])
+       (infer operand (if union? (branch-type operand T) T)))
+     #f]
     [(fp-call? ast) (infer-call ast T)]
     [else #f]))
 
@@ -89,6 +97,53 @@
     [(memq name '(ofType as)) (and (pair? args) (arg-type (car args)))]
     [(memq name same-type-fns) Tt]
     [else #f]))                                          ; unmodeled -> unknown
+
+;; ---- the branches of a union ----------------------------------------------------------------
+;; FHIR writes a search parameter that serves several resource types as ONE expression, a union of
+;; paths each rooted at its own type (`Patient.name.given | Practitioner.name.given`). Over a
+;; Patient the Practitioner branch contributes nothing. So the head of a `|` operand, when it names
+;; a resource type, SELECTS the input of that type; anywhere else a head naming another resource
+;; type stays the semantic error HL7's suite expects (testSimpleWithWrongContext,
+;; `Encounter.name.given` over a Patient).
+
+;; path-head : ast -> (or/c symbol? #f)   the name a path starts with, seen through the steps,
+;; functions, indexers and type operators applied to it:
+;;   Practitioner.name.where(use = 'official')[0] as HumanName  ->  Practitioner
+;; #f when the expression does not start with a name (a literal, a function of the focus, an operator)
+(define (path-head ast)
+  (cond [(fp-invoke? ast) (if (fp-invoke-target ast) (path-head (fp-invoke-target ast)) (fp-invoke-name ast))]
+        [(fp-call? ast) (and (fp-call-target ast) (path-head (fp-call-target ast)))]
+        [(fp-index? ast) (path-head (fp-index-target ast))]
+        [(fp-typeop? ast) (path-head (fp-typeop-operand ast))]
+        [else #f]))
+
+;; with-head : ast ast -> ast   the path with `head` in place of the name it starts with
+(define (with-head ast head)
+  (cond [(fp-invoke? ast)
+         (if (fp-invoke-target ast) (fp-invoke (with-head (fp-invoke-target ast) head) (fp-invoke-name ast)) head)]
+        [(fp-call? ast) (fp-call (with-head (fp-call-target ast) head) (fp-call-name ast) (fp-call-args ast))]
+        [(fp-index? ast) (fp-index (with-head (fp-index-target ast) head) (fp-index-idx ast))]
+        [(fp-typeop? ast) (fp-typeop (fp-typeop-op ast) (with-head (fp-typeop-operand ast) head) (fp-typeop-type ast))]
+        [else ast]))
+
+;; union-branch : ast -> ast   an operand of `|` as the evaluator runs it: a head naming a resource
+;; type becomes `ofType(<that type>)` over the focus, so the branch of another type is empty and the
+;; rest of the path runs over that (`Practitioner.name.exists()` is false, not an error)
+;;   Practitioner.name.given  ->  ofType(Practitioner).name.given        name.given  ->  name.given
+(define (union-branch ast)
+  (define head (path-head ast))
+  (if (and head (resource-type-name? head))
+      (with-head ast (fp-call #f 'ofType (list (fp-invoke #f head))))
+      ast))
+
+;; branch-type : ast (or/c symbol? #f) -> (or/c symbol? #f)   the type to check a `|` operand
+;; against: the resource type its head names when that is neither T nor an ancestor of T (the branch
+;; is then about resources of that type: a misspelt element in it is still reported), else T
+(define (branch-type operand T)
+  (define head (path-head operand))
+  (if (and T head (not (eq? head T)) (not (memq head (fhir-ancestors T))) (resource-type-name? head))
+      head
+      T))
 
 ;; a type-specifier argument AST -> its (last) type symbol
 (define (arg-type a)
@@ -160,4 +215,32 @@
   (check-false (ok? "Observation.valueQuantity.exists()" 'Observation)) ; strict: direct choice access
   (check-false (ok? "(Observation.value as Period).unit" 'Observation))
   (check-false (ok? "Patient.children().skip(1)" 'Patient))        ; strict: ordered fn on unordered
-  (check-false (ok? "Appointment.identifier.startsWith('x')" 'Appointment)))  ; string-fn on complex
+  (check-false (ok? "Appointment.identifier.startsWith('x')" 'Appointment))  ; string-fn on complex
+  ;; a `|` operand rooted at another resource type (FHIR's multi-type search parameters) is checked
+  ;; against THAT type; the same head outside a union is still an error (HL7's suite), and so is a
+  ;; name that is neither a resource type nor an element
+  (define (why s root)
+    (with-handlers ([exn:fp? exn-message]) (analyze (parse-fhirpath s) root #:strict? #f) #f))
+  (check-false (why "Patient.name.given | Practitioner.name.given" 'Patient))
+  (check-false (why "Patient.name.given | Practitioner.name.given" 'Practitioner))
+  (check-false (why "Practitioner.name.given | Patient.name.given | RelatedPerson.name.given" 'RelatedPerson))
+  (check-false (why "(Practitioner.name.where(use = 'official')[0] as HumanName).given | Patient.name.given" 'Patient))
+  (check-false (why "Resource.meta.lastUpdated | Patient.birthDate" 'Patient))     ; an ancestor is the input itself
+  (check-equal? (why "Patient.name.given | Practitioner.name.givn" 'Patient)
+                "fhirpath: no element HumanName.givn (did you mean `given`?)")
+  (check-equal? (why "Patient.name.given | Practitioner.nmae.given" 'Patient)
+                "fhirpath: no element Practitioner.nmae (did you mean `name`?)")
+  (check-equal? (why "Practitioner.name.given" 'Patient) "fhirpath: no element Patient.Practitioner")
+  (check-equal? (why "name.where(Practitioner.name.exists())" 'Patient) "fhirpath: no element HumanName.Practitioner")
+  (check-equal? (why "Patient.name.given | Practicioner.name.given" 'Patient)
+                "fhirpath: no element Patient.Practicioner")
+  (check-equal? (why "name.given | activ" 'Patient) "fhirpath: no element Patient.activ (did you mean `active`?)")
+  ;; the head of a path, and a branch as the evaluator runs it
+  (check-equal? (path-head (parse-fhirpath "Practitioner.name.where(use = 'official')[0] as HumanName")) 'Practitioner)
+  (check-equal? (path-head (parse-fhirpath "name.given")) 'name)
+  (check-false (path-head (parse-fhirpath "'a' | 'b'")))
+  (check-false (path-head (parse-fhirpath "exists()")))
+  (check-equal? (union-branch (parse-fhirpath "Practitioner.name.given")) (parse-fhirpath "ofType(Practitioner).name.given"))
+  (check-equal? (union-branch (parse-fhirpath "(Practitioner.name as HumanName)[0]"))
+                (parse-fhirpath "(ofType(Practitioner).name as HumanName)[0]"))
+  (check-equal? (union-branch (parse-fhirpath "name.given")) (parse-fhirpath "name.given")))
