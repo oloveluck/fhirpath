@@ -10,7 +10,7 @@
 
 (require racket/contract
          racket/string
-         (only-in fhir/model/registry type-schema-of type-registered?)
+         (only-in fhir/model/registry type-schema-of type-registered? type-registry-generation)
          (only-in fhir/model/schema type-schema-parent)
          (only-in "value.rkt" item-fhir-type item-system-type system-value?)
          (only-in fhir/model/base primitive-type?)
@@ -46,8 +46,19 @@
         'url 'uri 'canonical 'uri 'oid 'uri 'uuid 'uri
         'positiveInt 'integer 'unsignedInt 'integer 'instant 'dateTime))
 
-;; the FHIR ancestor chain of a type (self first, up to Base)
+;; the FHIR ancestor chain of a type (self first, up to Base). Asked for at every step of every
+;; path (the static pass, `is`/`ofType`, navigation), so each type's chain is worked out once —
+;; for as long as the registry is what it was (a logical model can be registered again under a
+;; name; the registry's generation says when).
+(define ancestors (make-hasheq))
+(define ancestors-generation -1)
 (define (fhir-ancestors t)
+  (unless (eqv? ancestors-generation (type-registry-generation))
+    (hash-clear! ancestors)
+    (set! ancestors-generation (type-registry-generation)))
+  (hash-ref! ancestors t (lambda () (ancestor-chain t))))
+
+(define (ancestor-chain t)
   (let loop ([t t] [acc '()])
     (cond
       [(not t) (reverse acc)]
