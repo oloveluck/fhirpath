@@ -1,5 +1,9 @@
 # fhirpath — FHIRPath
 
+> Part of [fhir](https://github.com/oloveluck/fhir), a FHIR implementation designed to be used by
+> AI agents: one line per problem, at its place, with what would fix it; a guide written for an
+> agent to read; the same language inside the `fhir-mcp` workspace.
+
 [FHIRPath](https://hl7.org/fhirpath/) is FHIR's small language for asking a question of one
 resource: "the patient's official given names", "is this patient an adult". FHIR itself uses it
 wherever a rule has to point inside a resource: the invariants of a profile, search parameters,
@@ -29,10 +33,10 @@ of them. With Racket, `raco fhirpath` is the same command.
 step by step, how to write an expression, where FHIR uses the language, using it from a program, and
 the reference.
 
+- For agents: [guide.md](guide.md), a cheat sheet and worked examples, each one tested; and the
+  [fhirpath skill](.claude/skills/fhirpath/SKILL.md).
 - How well it works (HL7's FHIRPath suites: all 1044 tests for R5, 932 of 934 for R4; all 573 of
   UCUM's): [TESTING.md](TESTING.md).
-- For AI agents: [guide.md](guide.md), a cheat sheet and worked examples, each one tested; and the
-  [fhirpath skill](.claude/skills/fhirpath/SKILL.md).
 - How it is built: [CLAUDE.md](CLAUDE.md).
 
-Part of the [fhir](https://github.com/oloveluck/fhir) family. License: MIT.
+License: MIT.
