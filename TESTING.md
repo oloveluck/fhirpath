@@ -12,6 +12,7 @@ The official suites are vendored (`tests/vendor`) and each run is held to a floo
 | The guide (`tests/guide-test.rkt`) | every cheat-sheet expression in guide.md parses; its worked examples' transcript is exactly what `raco fhirpath` prints over the guide's two resources | passes |
 | The manual (`tests/docs-test.rkt`) | scribblings/fhirpath.scrbl renders with no broken reference to its own sections or bindings | passes |
 | FHIR's SearchParameters (`tests/search-parameters-test.rkt`) | every expression of the R5 core package passes the static check for each of its base types (a parameter of several types is a union of paths, each rooted at its type) | 1954/1980 pairs; the 26 are the package's own (`date` writes Appointment's branch without its type) |
+| The parser against the published grammar (`tests/descent-test.rkt`) | expressions are read by a hand-written parser; the parser generated from the vendored fhirpath.g4 (brag) stays the reference and the reader of every error: both must give the same tree or the same error at the same place, over the suites, every SearchParameter and constraint expression of six packages, 3,000 generated expressions and 3,000 token soups | 0 disagreements |
 | The command line (`tests/cli-test.rkt`) | two expressions and an empty one are one-line syntax errors (exit 1); a search parameter of several types runs over a resource of one of them | passes |
 
 The two R4 misses are known and deliberate:

@@ -2,9 +2,12 @@
 
 ;;; parse.rkt — the FHIRPath parse API: string -> AST.
 ;;;
-;;; Shared by the library and the (future) #lang reader. Goes through brag's parse-to-datum then
-;;; lowers to the compact prefab AST. A parse failure raises exn:fail (the harness maps this to a
-;;; `syntax` invalid-test outcome).
+;;; Shared by the library and the (future) #lang reader. A text is read by recursive descent
+;;; (descent.rkt) straight to the compact prefab AST; anything that reader does not take goes to
+;;; brag's parser of the published grammar (grammar.rkt) and is lowered (ast.rkt) — so every syntax
+;;; error is brag's, positioned, and tests/descent-test.rkt holds the two to the same AST.
+;;; A parse failure raises exn:fail:diagnostic (the harness maps it to a `syntax` invalid-test
+;;; outcome).
 
 (require racket/contract
          (only-in brag/support token srcloc-token? srcloc-token-token token-struct-type token-struct-val token-struct? token-struct-skip? token-struct-offset
@@ -13,12 +16,16 @@
                   diagnostic loc)
          (prefix-in g: "grammar.rkt")
          "lexer.rkt"
-         "ast.rkt")
+         "ast.rkt"
+         "descent.rkt")
 
 (provide
  (contract-out
   [parse-fhirpath         (-> string? any/c)]     ; one expression -> AST
-  [parse-fhirpath-program (-> string? list?)]))    ; ;-separated program -> (listof AST)
+  [parse-fhirpath-program (-> string? list?)]      ; ;-separated program -> (listof AST)
+  ;; the same through brag's parser of the published grammar alone: what tests hold the
+  ;; recursive-descent reader (descent.rkt) to
+  [parse-fhirpath-program/brag (-> string? list?)]))
 
 ;; Memoized: the same expressions (invariants, search params, navigation) are parsed thousands of times
 ;; by the validator and capability search. ASTs are immutable prefab values, so sharing is safe.
@@ -50,10 +57,25 @@
 ;; a syntax error raises exn:fail:diagnostic (fhir/diagnostic): positioned, "the expression ends
 ;; after `x`" when the input runs out; a text with no token at all (nothing, space, a comment) is
 ;; "the expression is empty" (brag's own words for it were "unexpected no-tokens `#f`")
+;; parse-fhirpath-program : String -> (listof AST)   by descent, else (errors included) by brag
 (define (parse-fhirpath-program str)
   (define toks (lex str))
   (unless (ormap probe-token toks)
     (raise-diagnostic (diagnostic 'fhirpath 'parse 'error "the expression is empty" #f)))
+  (cond
+    [(descend-program (filter values (map probe-token toks)))
+     => (lambda (program) (check-bare-units! toks) program)]
+    [else (brag-program toks)]))
+
+;; parse-fhirpath-program/brag : String -> (listof AST)   brag's reading alone
+(define (parse-fhirpath-program/brag str)
+  (define toks (lex str))
+  (unless (ormap probe-token toks)
+    (raise-diagnostic (diagnostic 'fhirpath 'parse 'error "the expression is empty" #f)))
+  (brag-program toks))
+
+;; brag-program : (listof token) -> (listof AST)   the tokens read by brag's parser of the grammar
+(define (brag-program toks)
   (with-handlers ([(lambda (e) (and (exn:fail? e) (not (exn:fail:diagnostic? e))))
                    (lambda (e)
                      (define last-pos (tokens->last-position toks real-position))

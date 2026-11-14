@@ -150,11 +150,9 @@ refactoring; every other difference is one of the changes below. Tests 299 -> 43
     identity; an error literal is not remembered). A variable scope is a box over an immutable hash
     (environment.rkt): opening one at every `|` operand, argument and projected item was a copy of a
     mutable table.
-  - Parsing stays brag's: lexing the 2,389 distinct expressions takes 45 ms, brag ~3.6 s (98%,
-    ~140 µs a token), lowering 4 ms. A precedence-climbing parser over the same tokens would make a
-    first parse ~50x cheaper; `parse-fhirpath` memoises by text, so it matters for one-off texts
-    (the CLI, a workspace query, the TCK runs). Left: contract wrappers on fhirpath's own
-    cross-module calls (eval -> navigate/functions/operators/types) are now ~30% of evaluation; an
+  - Parsing was brag's: lexing the 2,389 distinct expressions takes 45 ms, brag ~3.6 s (98%,
+    ~140 µs a token), lowering 4 ms. Done since: see "Read by descent, held to the grammar" below.
+    Left: contract wrappers on fhirpath's own cross-module calls (eval -> navigate/functions/operators/types) are now ~30% of evaluation; an
     unchecked submodule for in-package callers would remove most of it.
 - **Regular expressions** (regex.rkt, new): FHIRPath recommends PCRE; Racket's pregexp refuses a
   `]` outside a class and a `{`/`}` that is no repetition, has no named groups, and reads `&`/`\1` in
@@ -196,3 +194,33 @@ refactoring; every other difference is one of the changes below. Tests 299 -> 43
   not a string form). Left: `duration`/`difference` (calendar boundaries and whole periods per
   precision, with the timezone rules), `sort`'s `asc`/`desc` keywords (a grammar change; `-` works),
   the LONGNUMBER literal (`2L`), instance selectors, `pathname`.
+
+## Read by descent, held to the grammar (2026-11-14)
+The owner's rule: keep brag "for testing since it helps tie the implementation to the published
+antlr grammar". So `parser/grammar.rkt` (brag, from the vendored fhirpath.g4) stays the definition
+of FHIRPath text, and `parser/descent.rkt` (`descend-program`) reads it fast:
+- **descent.rkt** reads the grammar's precedence cascade by recursive descent, a token at a time,
+  straight to the AST (`binary` folds each level's operators to the left; `type-expr`, `unary-expr`,
+  `postfix-expr`, `primary`, `literal` are the grammar's rules). It only ever ACCEPTS: on a token it
+  does not expect it answers #f (`refuse`), and parse.rkt gives the tokens to brag, whose answer —
+  its tree lowered by ast.rkt's `lower`, or its positioned error — is the one returned. Every syntax
+  error therefore comes from brag, as before. The grammar reads one form two ways — a NUMBER
+  followed by `is`/`as`/`in`/`contains` with nothing that begins an operand after it (`5 is`: a unit
+  named `is`, or the start of a type test) — and descent leaves exactly that to brag
+  (`unit-keyword-certain?`).
+- **parse.rkt**: `parse-fhirpath-program` = descent, else `brag-program` (the old path, unchanged:
+  `check-bare-units!` runs on both); `parse-fhirpath-program/brag` is brag alone, provided for tests.
+- **tests/descent-test.rkt** holds the two to the same Outcome — the same AST, or the same error
+  word for word at the same place — over the HL7 suites (1,042 texts), every SearchParameter and
+  constraint expression of the R4 and R5 cores, US Core, IPS, mCODE and CRMI (2,327), 3,000
+  expressions grown from the grammar's productions (seeded) and 3,000 token soups: 0
+  disagreements. It also counts what descent read itself: every text the grammar reads, in the
+  suites, the packages and the generated expressions; among the soups all but the `5 is` form. A
+  planted bug (`mod`'s operands swapped) fails it in all four groups.
+- **Measured** (one machine, back to back): the first parse of the 1,042 suite expressions 1,282 ->
+  113 ms (lexing now most of it); `raco fhirpath --tck r5` 4.3 -> 3.0 s, `--tck r4` 2.6 -> 0.8 s.
+  Downstream the gain is small: `raco fsh check` on mCODE ~7.0 -> ~6.1 s and one
+  `raco fhir-validate` ~3.1 -> ~2.8 s — within run-to-run noise; their time is startup and the
+  package indexes, and repeated expressions were already memoised. Floors unchanged (R5 1044/1044,
+  R4 932/934, UCUM 573/573); tests 432 -> 454.
+

@@ -490,7 +490,11 @@ Against the suites HL7 and UCUM publish, kept in the repository as published:
 described under Limits.}
 @item{UCUM's functional tests (validity, display names, conversion, arithmetic on units): all 573.}
 @item{Every expression in the repository's @tt{guide.md} is parsed and its worked examples are
-replayed through the command line, so what it shows is what you get.}]
+replayed through the command line, so what it shows is what you get.}
+@item{Expressions are read by a hand-written parser, for speed. The parser generated from the
+published grammar (fhirpath.g4) is kept as the reference: it reports every syntax error, and a test
+requires both to read thousands of expressions (the suites, the core packages' search parameters
+and constraints, generated ones) to the same result.}]
 
 @sh{raco fhirpath --tck r5}, @sh{raco fhirpath --tck r4} and @sh{raco fhirpath --ucum-tck} run the
 suites; each fails if the count drops below what it was. @sh{raco test .} in the repository runs
