@@ -20,8 +20,8 @@
                   decimal-mul decimal-div decimal-cmp fp-decimal fp-decimal-scale)
          (only-in "temporal-ops.rkt" value->moment moment? moment-compare moment->string moment-plus
                   moment-add-ms)
-         (only-in "equality.rkt" coll-equal coll-equiv item=?)
-         (only-in "quantity.rkt" quantity-compare quantity-add quantity-sub make-quantity))
+         (only-in "equality.rkt" coll-equal coll-equiv member=? distinct=)
+         (only-in "quantity.rkt" quantity-compare quantity-add quantity-sub make-quantity calendar-ucum))
 
 (provide (contract-out
           [apply-binop (-> symbol? list? list? list?)]
@@ -39,7 +39,7 @@
     [(< > <= >=) (compare op a b)]
     [(+ - * / div mod) (arith op a b)]
     [(&) (concat a b)]
-    [(union) (dedup (append a b))]
+    [(union) (distinct= (append a b))]
     [(in) (membership (one a) b)]
     [(contains) (membership (one b) a)]
     [else (fp-error 'semantic (format "unknown operator ~a" op))]))
@@ -190,10 +190,7 @@
 
 ;; uc : Quantity -> String   the UCUM code of a quantity (calendar units mapped to their UCUM code)
 (define (uc q)
-  (if (fp-quantity-calendar? q)
-      (hash-ref calendar-ucum (fp-quantity-unit q) (fp-quantity-unit q))
-      (fp-quantity-unit q)))
-(define calendar-ucum (hash "week" "wk" "day" "d" "hour" "h" "minute" "min" "second" "s" "millisecond" "ms"))
+  (if (fp-quantity-calendar? q) (calendar-ucum (fp-quantity-unit q)) (fp-quantity-unit q)))
 ;; qty-int : Quantity -> Integer   the value toward zero (calendar/time arithmetic counts whole units)
 (define (qty-int q) (let ([r (decimal->exact (fp-quantity-value q))]) (if (integer? r) (inexact->exact r) (truncate/ r 1))))
 ;; qty-rat / qty-ms : Quantity -> Rational | Integer   the exact value; the value in milliseconds
@@ -215,17 +212,10 @@
   (cond [(null? coll) ""]
         [else (define s (item->system (car coll))) (if (string? s) s (fp-error 'execution "& expects strings"))]))
 
-;; dedup : Coll -> Coll   the distinct items under =, in order
-(define (dedup coll)
-  (let loop ([xs coll] [acc '()])
-    (cond [(null? xs) (reverse acc)]
-          [(for/or ([y (in-list acc)]) (item=? (car xs) y)) (loop (cdr xs) acc)]
-          [else (loop (cdr xs) (cons (car xs) acc))])))
-
 ;; membership : Item | 'empty Coll -> Coll   `in` / `contains`: is the item = to one of the collection's?
 (define (membership x ys)
   (cond [(eq? x 'empty) '()]
-        [else (list (and (for/or ([y (in-list ys)]) (item=? x y)) #t))]))
+        [else (list (member=? x ys))]))
 
 ;; ---- living examples ------------------------------------------------------------------------
 (module+ test

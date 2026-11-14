@@ -26,6 +26,9 @@
          (struct-out datetime-lit)
          (struct-out time-lit)
          (contract-out
+          ;; calendar-word? : String -> Boolean   a unit the grammar lets a quantity write bare
+          ;; (dateTimePrecision | pluralDateTimePrecision: year … millisecond, years … milliseconds)
+          [calendar-word? (-> string? boolean?)]
           [lower         (-> any/c any/c)]
           [lower-program (-> any/c list?)]))
 
@@ -46,6 +49,12 @@
 (struct date-lit     (str) #:prefab)
 (struct datetime-lit (str) #:prefab)
 (struct time-lit     (str) #:prefab)
+
+;; the grammar's calendar duration words, singular and plural
+(define calendar-words
+  (let ([singular '("year" "month" "week" "day" "hour" "minute" "second" "millisecond")])
+    (append singular (map (lambda (w) (string-append w "s")) singular))))
+(define (calendar-word? u) (and (member u calendar-words) #t))
 
 ;; operator string -> symbol
 (define (op->sym s)

@@ -9,8 +9,8 @@
 
 (require racket/contract racket/list racket/string
          (only-in fhir/model/node fhir? fhir-type fhir-ref fhir-field-names fhir-has?)
-         (only-in "value.rkt" item->system fp-quantity? fp-long? fp-long-v)
-         (only-in "decimal.rkt" fp-decimal? integer->decimal decimal-cmp fp-decimal-scale
+         (only-in "value.rkt" item->system fp-quantity? as-decimal)
+         (only-in "decimal.rkt" decimal-cmp fp-decimal-scale
                   decimal-round)
          (only-in "temporal-ops.rkt" value->moment moment? moment-equal? moment-equiv?)
          (only-in "quantity.rkt" quantity-compare quantity-equiv?))
@@ -21,6 +21,12 @@
   [coll-equiv (-> list? list? boolean?)]
   [item-equal? (-> any/c any/c (or/c 'true 'false 'empty))]
   [item=?      (-> any/c any/c boolean?)]
+  ;; member=? : Item Coll -> Boolean   is an item = to one of the collection's? (in, contains, the
+  ;; set functions)
+  [member=?    (-> any/c list? boolean?)]
+  ;; distinct= : Coll -> Coll   the distinct items under =, first occurrences in order (|, union,
+  ;; distinct, intersect, repeat)
+  [distinct=   (-> list? list?)]
   [item-equiv? (-> any/c any/c boolean?)]))
 
 ;; ---- collection equality (=) ----------------------------------------------------------------
@@ -39,6 +45,14 @@
 
 (define (item=? a b) (eq? (item-equal? a b) 'true))
 
+(define (member=? x coll) (for/or ([y (in-list coll)]) (item=? x y)))
+
+(define (distinct= coll)
+  (let loop ([xs coll] [acc '()])
+    (cond [(null? xs) (reverse acc)]
+          [(member=? (car xs) acc) (loop (cdr xs) acc)]
+          [else (loop (cdr xs) (cons (car xs) acc))])))
+
 (define (item-equal? a b)
   (define sa (item->system a)) (define sb (item->system b))
   (cond
@@ -46,9 +60,7 @@
     [(or (fhir? sa) (fhir? sb)) 'false]
     [else (system-equal? sa sb)]))
 
-(define (as-dec x)
-  (cond [(fp-decimal? x) x] [(exact-integer? x) (integer->decimal x)]
-        [(fp-long? x) (integer->decimal (fp-long-v x))] [else #f]))
+(define as-dec as-decimal)      ; a System value as a Decimal when it is a number, else #f
 
 (define (system-equal? a b)
   (define da (as-dec a)) (define db (as-dec b))
@@ -131,4 +143,7 @@
   (check-eq? (coll-equal (list "a") (list "a")) 'true)
   (check-true (coll-equiv (list "Hello World") (list "hello   world")))  ; case/ws-insensitive
   (check-true (coll-equiv (list 1 2 3) (list 3 2 1)))                    ; order-independent
-  (check-false (coll-equiv (list 1 2) (list 1 2 3))))
+  (check-false (coll-equiv (list 1 2) (list 1 2 3)))
+  (check-equal? (distinct= (list 1 (parse-decimal "1.0") 2 1)) '(1 2))
+  (check-true (member=? 2 (list 1 2)))
+  (check-false (member=? 3 '())))

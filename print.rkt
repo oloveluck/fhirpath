@@ -11,7 +11,7 @@
          (only-in "parser/ast.rkt"
                   fp-lit fp-invoke fp-call fp-index fp-binop fp-unop fp-typeop fp-var fp-extern
                   dec-lit dec-lit-lexeme qty-lit qty-lit-number qty-lit-unit
-                  date-lit date-lit-str datetime-lit datetime-lit-str time-lit time-lit-str))
+                  date-lit date-lit-str datetime-lit datetime-lit-str time-lit time-lit-str calendar-word?))
 
 (provide (contract-out [fhirpath->string (-> any/c string?)]))
 
@@ -49,7 +49,10 @@
     ['empty "{}"]
     [(? exact-integer?) (number->string v)]
     [(dec-lit lex) lex]
-    [(qty-lit n u) (format "~a '~a'" (if (dec-lit? n) (dec-lit-lexeme n) n) u)]
+    ;; a calendar duration is written with its word bare (`5 days`), as the grammar's `unit` has it;
+    ;; a UCUM unit is a quoted string (`5 'mg'`)
+    [(qty-lit n u) (format (if (calendar-word? u) "~a ~a" "~a '~a'") (if (dec-lit? n) (dec-lit-lexeme n) n)
+                           (if (calendar-word? u) u (escape-string u)))]
     [(date-lit s) (format "@~a" s)]
     [(datetime-lit s) (format "@~a" s)]
     [(time-lit s) (format "@T~a" s)]
@@ -77,6 +80,11 @@
   (check-equal? (parse-fhirpath (roundtrip "x = 'it\\'s'")) (parse-fhirpath "x = 'it\\'s'"))
   (check-equal? (roundtrip "(-x).abs()") "(-x).abs()")
   ;; print∘parse is a fixpoint: re-parsing the printed text yields the same AST
-  (for ([s '("linkId.value in ('patient.sex')" "%value + 5 days" "iif(x, 'a', 'b')")])
+  ;; quantities: a calendar duration bare (it printed `5 'days'`), a UCUM unit quoted
+  (check-equal? (roundtrip "%value + 5 days") "%value + 5 days")
+  (check-equal? (roundtrip "1 'month'") "1 month")
+  (check-equal? (roundtrip "4.0 'mg'") "4.0 'mg'")
+  (check-equal? (roundtrip "1 '[in_i]'") "1 '[in_i]'")
+  (for ([s '("linkId.value in ('patient.sex')" "%value + 5 days" "iif(x, 'a', 'b')" "1.5 'mm[Hg]'")])
     (check-equal? (parse-fhirpath (fhirpath->string (parse-fhirpath s)))
                   (parse-fhirpath s))))

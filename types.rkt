@@ -21,7 +21,13 @@
   [item-is?       (-> any/c symbol? boolean?)]          ; item `is` typeSpecifier
   [item-of-type?  (-> any/c symbol? boolean?)]          ; item `as`/`ofType` (strict) typeSpecifier
   [known-type?    (-> symbol? boolean?)]                ; is this typeSpecifier a real FHIR/System type?
-  [fhir-ancestors (-> (or/c symbol? #f) (listof symbol?))]
+  ;; the range is checked as a list only: the chain is remembered, and checking every symbol of it
+  ;; on every call was a tenth of the static pass
+  [fhir-ancestors (-> (or/c symbol? #f) list?)]
+  [primitive-codes (listof symbol?)]                    ; the FHIR primitive type names
+  ;; registry-memo : (Symbol|#f -> X) -> (Symbol|#f -> X)   f remembered per key for as long as the
+  ;; type registry is what it was (a logical model can be registered again under a name)
+  [registry-memo  (-> (-> any/c any/c) (-> any/c any/c))]
   [type-info-of   (-> any/c (values symbol? symbol?))])) ; item -> (values namespace name) for type()
 
 (define framework-parents
@@ -46,39 +52,40 @@
         'url 'uri 'canonical 'uri 'oid 'uri 'uuid 'uri
         'positiveInt 'integer 'unsignedInt 'integer 'instant 'dateTime))
 
-;; the FHIR ancestor chain of a type (self first, up to Base). Asked for at every step of every
-;; path (the static pass, `is`/`ofType`, navigation), so each type's chain is worked out once —
-;; for as long as the registry is what it was (a logical model can be registered again under a
-;; name; the registry's generation says when).
-(define ancestors (make-hasheq))
-(define ancestors-generation -1)
-(define (fhir-ancestors t)
-  (unless (eqv? ancestors-generation (type-registry-generation))
-    (hash-clear! ancestors)
-    (set! ancestors-generation (type-registry-generation)))
-  (hash-ref! ancestors t (lambda () (ancestor-chain t))))
+;; registry-memo : (Symbol|#f -> X) -> (Symbol|#f -> X)
+;; `f` remembered per key, for as long as the registry is what it was: a logical model can be
+;; registered again under a name, and the registry's generation says when. What depends only on a
+;; type (its ancestors, its elements, its choice members) is asked at every step of every path.
+(define (registry-memo f)
+  (define table (make-hasheq))
+  (define generation -1)
+  (lambda (key)
+    (unless (eqv? generation (type-registry-generation))
+      (hash-clear! table)
+      (set! generation (type-registry-generation)))
+    (define known (hash-ref table key none))
+    (cond [(eq? known none) (define v (f key)) (hash-set! table key v) v]
+          [else known])))
+(define none (string->uninterned-symbol "none"))
 
-(define (ancestor-chain t)
+;; ancestor-chain : Symbol|#f Boolean -> (listof Symbol)   the type and its ancestors, up to Base.
+;; With `derivation?` a primitive follows its FHIR derivation first (code -> string): `is` reads
+;; the chain that way (code is string), `as`/`ofType` do not (the "contested" TCK ruling:
+;; as(string) on a code is empty).
+(define (ancestor-chain t derivation?)
   (let loop ([t t] [acc '()])
     (cond
       [(not t) (reverse acc)]
-      [(hash-ref prim-parent t #f) => (lambda (p) (loop p (cons t acc)))]
+      [(and derivation? (hash-ref prim-parent t #f)) => (lambda (p) (loop p (cons t acc)))]
       [(memq t primitive-codes) (loop 'PrimitiveType (cons t acc))]
       [(type-schema-of t) => (lambda (sch) (loop (type-schema-parent sch) (cons t acc)))]
       [(hash-has-key? framework-parents t) (loop (hash-ref framework-parents t) (cons t acc))]
       [else (reverse (cons t acc))])))
 
-;; strict ancestry: like fhir-ancestors but WITHOUT the primitive-derivation edge (code<:string).
-;; `is` uses the full chain (code is string => true); `as`/`ofType` use strict (as(string) on a code
-;; is empty — the "contested" TCK ruling).
-(define (fhir-ancestors-strict t)
-  (let loop ([t t] [acc '()])
-    (cond
-      [(not t) (reverse acc)]
-      [(memq t primitive-codes) (loop 'PrimitiveType (cons t acc))]
-      [(type-schema-of t) => (lambda (sch) (loop (type-schema-parent sch) (cons t acc)))]
-      [(hash-has-key? framework-parents t) (loop (hash-ref framework-parents t) (cons t acc))]
-      [else (reverse (cons t acc))])))
+;; fhir-ancestors : Symbol|#f -> (listof Symbol)   the FHIR ancestor chain of a type (self first)
+(define fhir-ancestors (registry-memo (lambda (t) (ancestor-chain t #t))))
+;; fhir-ancestors-strict : the chain without the primitive-derivation edge (for as/ofType)
+(define fhir-ancestors-strict (registry-memo (lambda (t) (ancestor-chain t #f))))
 
 (define (fhir-is?/anc item name anc)
   (define ft (item-fhir-type item))
@@ -90,29 +97,46 @@
   (and (system-value? item) (eq? (item-system-type item) name)))
 
 (define system-type-names '(Boolean Integer Long Decimal String Date DateTime Time Quantity SimpleTypeInfo))
-(define (known-type? typesym)
+
+;; A TypeSpec is (cons Namespace Symbol): a type specifier as it is read —
+;;   ('System . Integer)   System.Integer        ('FHIR . Patient)   FHIR.Patient
+;;   (#f . Patient)        Patient: FHIR first, then System
+;;   ('other . X)          a qualifier that is neither: no type
+;; type-spec : Symbol -> TypeSpec   read once per symbol (the specifier was split at its dot for
+;; every item an `ofType` looked at)
+(define type-specs (make-weak-hasheq))
+(define (type-spec typesym)
+  (or (hash-ref type-specs typesym #f)
+      (let ([spec (read-type-spec typesym)]) (hash-set! type-specs typesym spec) spec)))
+(define (read-type-spec typesym)
   (define parts (string-split (symbol->string typesym) "."))
-  (cond
-    [(= (length parts) 2)
-     (define nm (string->symbol (cadr parts)))
-     (cond [(string=? (car parts) "System") (and (memq nm system-type-names) #t)]
-           [(string=? (car parts) "FHIR") (or (type-registered? nm) (and (memq nm primitive-codes) #t))]
-           [else #f])]
-    [else (or (type-registered? typesym) (and (memq typesym primitive-codes) #t)
-              (and (memq typesym system-type-names) #t))]))
+  (cond [(= (length parts) 2)
+         (cons (cond [(string=? (car parts) "System") 'System] [(string=? (car parts) "FHIR") 'FHIR] [else 'other])
+               (string->symbol (cadr parts)))]
+        [else (cons #f typesym)]))
+
+(define (fhir-type-name? nm) (or (type-registered? nm) (and (memq nm primitive-codes) #t)))
+(define (system-type-name? nm) (and (memq nm system-type-names) #t))
+
+(define (known-type? typesym)
+  (define spec (type-spec typesym))
+  (case (car spec)
+    [(System) (system-type-name? (cdr spec))]
+    [(FHIR) (fhir-type-name? (cdr spec))]
+    [(other) #f]
+    [else (or (fhir-type-name? typesym) (system-type-name? typesym))]))
 
 (define (item-is? item typesym) (item-matches? item typesym fhir-ancestors))
 ;; as()/ofType() use STRICT ancestry (no primitive-derivation edge)
 (define (item-of-type? item typesym) (item-matches? item typesym fhir-ancestors-strict))
 
+;; item-matches? : Item Symbol (Symbol -> (listof Symbol)) -> Boolean
 (define (item-matches? item typesym anc)
-  (define parts (string-split (symbol->string typesym) "."))
-  (cond
-    [(= (length parts) 2)
-     (define ns (car parts)) (define nm (string->symbol (cadr parts)))
-     (cond [(string=? ns "System") (system-is? item nm)]
-           [(string=? ns "FHIR")   (fhir-is?/anc item nm anc)]
-           [else #f])]
+  (define spec (type-spec typesym))
+  (case (car spec)
+    [(System) (system-is? item (cdr spec))]
+    [(FHIR) (fhir-is?/anc item (cdr spec) anc)]
+    [(other) #f]
     [else (or (fhir-is?/anc item typesym anc) (system-is? item typesym))]))
 
 ;; type() : (values namespace name). A FHIR-typed item reports FHIR + its type; a pure System
@@ -141,4 +165,21 @@
   (check-true  (item-is? 5 'Integer))
   (check-true  (item-is? 5 'System.Integer))
   (check-false (item-is? 5 'Decimal))
-  (check-true  (item-is? "x" 'String)))
+  (check-true  (item-is? "x" 'String))
+  ;; a specifier is read once: qualified, unqualified, and a qualifier that names no model
+  (check-equal? (type-spec 'System.Integer) '(System . Integer))
+  (check-equal? (type-spec 'Patient) '(#f . Patient))
+  (check-equal? (type-spec 'Foo.Patient) '(other . Patient))
+  (check-true  (known-type? 'FHIR.Patient))
+  (check-true  (known-type? 'code))
+  (check-false (known-type? 'System.Patient))
+  (check-false (known-type? 'Foo.Patient))
+  (check-false (item-is? (fhir 'Patient (hasheq)) 'Foo.Patient))
+  ;; `is` follows a primitive's derivation, `as`/`ofType` do not
+  (check-equal? (fhir-ancestors 'code) '(code string PrimitiveType DataType Element Base))
+  (check-equal? (fhir-ancestors-strict 'code) '(code PrimitiveType DataType Element Base))
+  (check-equal? (fhir-ancestors #f) '())
+  ;; registry-memo asks once per key (a #f answer is remembered too)
+  (let* ([asked 0] [f (registry-memo (lambda (k) (set! asked (add1 asked)) (and k (list k))))])
+    (check-equal? (list (f 'a) (f 'a) (f #f) (f #f)) '((a) (a) #f #f))
+    (check-equal? asked 2)))

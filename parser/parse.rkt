@@ -60,7 +60,29 @@
                      (raise-diagnostic
                       (exn->diagnostic e 'fhirpath #:last-position last-pos #:unit "expression"
                                        #:ran-out? (ran-out-probe toks last-pos))))])
-    (lower-program (g:parse-to-datum (let ([ts toks]) (lambda () (if (null? ts) (void) (begin0 (car ts) (set! ts (cdr ts))))))))))
+    (define datum (g:parse-to-datum (let ([ts toks]) (lambda () (if (null? ts) (void) (begin0 (car ts) (set! ts (cdr ts))))))))
+    (check-bare-units! toks)
+    (lower-program datum)))
+
+;; check-bare-units! : (listof token) -> Void
+;; a quantity's unit is a calendar duration word written bare (`5 days`) or a UCUM unit written as a
+;; string (`5 'mg'`): the grammar's `unit` is dateTimePrecision | pluralDateTimePrecision | STRING.
+;; `5 mg` was read as `5 'mg'`; it is a parse error at the word. A NUMBER followed by an IDENTIFIER
+;; is always a quantity (`as`, `is`, `div`, … are tokens of their own), so the tokens decide it.
+(define (check-bare-units! toks)
+  (let loop ([ks (filter values (map probe-token toks))])
+    (when (and (pair? ks) (pair? (cdr ks)))
+      (define num (car ks)) (define unit (cadr ks))
+      (when (and (eq? (token-struct-type num) 'NUMBER) (eq? (token-struct-type unit) 'IDENTIFIER)
+                 (not (calendar-word? (symbol->string (token-struct-val unit)))))
+        (define word (symbol->string (token-struct-val unit)))
+        (raise-diagnostic
+         (diagnostic 'fhirpath 'parse 'error
+                     (format "`~a` is no calendar duration (year … millisecond, or a plural): a UCUM unit is quoted, ~a '~a'"
+                             word (token-struct-val num) word)
+                     (loc #f (token-struct-line unit) (let ([c (token-struct-column unit)]) (and c (add1 c)))
+                          (token-struct-offset unit) (token-struct-span unit)))))
+      (loop (cdr ks)))))
 ;; probe-token : token|srcloc-token -> token-struct|#f   (skip tokens excluded)
 (define (probe-token t)
   (define k (if (srcloc-token? t) (srcloc-token-token t) t))
@@ -125,7 +147,11 @@
   (define (diag s) (with-handlers ([exn:fail:diagnostic? (lambda (e) (diagnostic->string (exn:fail:diagnostic-diagnostic e)))]) (parse-fhirpath s) #f))
   (check-equal? (diag "Patient.name.where(") "<input>:1:19: fhirpath parse error: the expression ends after `(`")
   (check-equal? (diag "Patient.name.where(use = )") "<input>:1:26: fhirpath parse error: unexpected `)`")
-  (check-equal? (diag "Patient.name ## x") "<input>:1:14: fhirpath lex error: unrecognized text `#`")
+  (check-equal? (diag "Patient.name ## x") "<input>:1:14: fhirpath lex error: unrecognized text `##`")
+  ;; the text quoted is where the lexer stopped, not what followed it (`@@` quoted nothing)
+  (check-equal? (diag "@@") "<input>:1:1: fhirpath lex error: unrecognized text `@@`")
+  (check-equal? (diag "a = @x") "<input>:1:5: fhirpath lex error: unrecognized text `@x`")
+  (check-equal? (diag "code.contains(\":\")") "<input>:1:15: fhirpath lex error: unrecognized text `\":\")` (a string is written in single quotes: 'text')")
   ;; one expression: a second one after `;` is a parse error at the `;` (it was a plain exn:fail, a
   ;; stack trace at the command line); a `;` inside a string is text
   (check-equal? (diag "1 = 1; 2") "<input>:1:6: fhirpath parse error: unexpected `;`: one expression is expected, this is 2")
@@ -135,4 +161,10 @@
   ;; no expression at all (it was "unexpected no-tokens `#f`")
   (check-equal? (diag "") "fhirpath parse error: the expression is empty")
   (check-equal? (diag "  \n") "fhirpath parse error: the expression is empty")
-  (check-equal? (diag "// only a comment") "fhirpath parse error: the expression is empty"))
+  (check-equal? (diag "// only a comment") "fhirpath parse error: the expression is empty")
+  ;; a bare unit is a calendar word; a UCUM unit is quoted (`5 mg` was read as 5 'mg')
+  (check-equal? (diag "value > 5 mg") "<input>:1:11: fhirpath parse error: `mg` is no calendar duration (year … millisecond, or a plural): a UCUM unit is quoted, 5 'mg'")
+  (check-equal? (diag "1.5 kg") "<input>:1:5: fhirpath parse error: `kg` is no calendar duration (year … millisecond, or a plural): a UCUM unit is quoted, 1.5 'kg'")
+  (check-equal? (parse-fhirpath "5 days") (fp-lit (qty-lit 5 "days")))
+  (check-equal? (parse-fhirpath "5 'days'") (fp-lit (qty-lit 5 "days")))
+  (check-equal? (parse-fhirpath "5 div 2") (fp-binop 'div (fp-lit 5) (fp-lit 2))))

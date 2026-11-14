@@ -85,13 +85,22 @@
   (cond [(null? coll) 'empty] [(null? (cdr coll)) (item->system (car coll))]
         [else (fp-error 'execution "expected a singleton index")]))
 
-;; literal -> collection
+;; lit->coll : LiteralValue -> Coll   a literal's value. A decimal, a quantity and a temporal are
+;; read from their lexemes once per literal (by identity: the AST is shared), not per evaluation; a
+;; literal that is an error (@1940-02-30) is not remembered and raises each time.
 (define (lit->coll v)
   (cond
     [(eq? v 'empty) '()]
-    [(exact-integer? v) (list v)]
-    [(boolean? v) (list v)]
-    [(string? v) (list v)]
+    [(or (exact-integer? v) (boolean? v) (string? v)) (list v)]
+    [(hash-ref literal-values v #f) => values]
+    [else (define coll (read-literal v))
+          (hash-set! literal-values v coll)
+          coll]))
+(define literal-values (make-weak-hasheq))
+
+;; read-literal : dec-lit | qty-lit | date-lit | datetime-lit | time-lit | Any -> Coll
+(define (read-literal v)
+  (cond
     [(dec-lit? v) (list (parse-decimal (dec-lit-lexeme v)))]
     [(qty-lit? v) (list (make-quantity (num->dec (qty-lit-number v)) (qty-lit-unit v)))]
     [(date-lit? v) (calendar-checked (parse-fp-date (date-lit-str v)) (date-lit-str v))]

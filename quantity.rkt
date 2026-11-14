@@ -9,12 +9,16 @@
                   fp-quantity-calendar?)
          (only-in "decimal.rkt" fp-decimal fp-decimal? decimal-cmp decimal->string decimal-add
                   decimal-sub decimal->exact decimal-precision integer->decimal parse-decimal)
-         (only-in "ucum.rkt" ucum-canonical ucum-commensurable?))
+         (only-in "ucum.rkt" ucum-canonical ucum-commensurable?)
+         (only-in "parser/ast.rkt" calendar-word?))
 
 (provide
  (contract-out
   [make-quantity   (-> fp-decimal? string? fp-quantity?)]
   [calendar-unit?  (-> string? boolean?)]
+  ;; calendar-ucum : String -> String   a calendar word's UCUM code for the exact-length ones
+  ;; (week -> wk … millisecond -> ms, plurals too); any other unit unchanged
+  [calendar-ucum   (-> string? string?)]
   [quantity-compare (-> fp-quantity? fp-quantity? (or/c -1 0 1 'empty))]
   [quantity-equiv?  (-> fp-quantity? fp-quantity? boolean?)]
   [quantity->string (-> fp-quantity? string?)]
@@ -22,8 +26,8 @@
   [quantity-sub    (-> fp-quantity? fp-quantity? (or/c fp-quantity? #f))]))
 
 (define calendar-singular '("year" "month" "week" "day" "hour" "minute" "second" "millisecond"))
-(define (calendar-unit? u)
-  (and (member (normalize-calendar u) calendar-singular) #t))
+;; calendar-unit? : String -> Boolean   a calendar duration word, singular or plural (the grammar's)
+(define (calendar-unit? u) (calendar-word? u))
 
 ;; plural -> singular; other strings unchanged
 (define (normalize-calendar u)
@@ -40,9 +44,10 @@
 ;; are NOT convertible to UCUM a/mo, so they only compare to the same calendar keyword)
 (define calendar->ucum
   (hash "week" "wk" "day" "d" "hour" "h" "minute" "min" "second" "s" "millisecond" "ms"))
+(define (calendar-ucum u) (hash-ref calendar->ucum (normalize-calendar u) u))
 (define (ucum-unit q)
   (define u (fp-quantity-unit q))
-  (if (fp-quantity-calendar? q) (hash-ref calendar->ucum (normalize-calendar u) u) u))
+  (if (fp-quantity-calendar? q) (calendar-ucum u) u))
 
 ;; the comparability key when UCUM can't canonicalize (calendar year/month, unknown units)
 (define (raw-key q) (if (fp-quantity-calendar? q) (normalize-calendar (fp-quantity-unit q)) (fp-quantity-unit q)))

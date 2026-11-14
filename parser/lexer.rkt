@@ -78,15 +78,35 @@
    ;; multi-char operators before single-char
    [(:or "<=" ">=" "!=" "!~") (token lexeme lexeme)]
    [(:or "." "[" "]" "(" ")" "," ";" "{" "}" "|" "&" "+" "-" "*" "/" "=" "<" ">" "~")
-    (token lexeme lexeme)]))
+    (token lexeme lexeme)]
+
+   ;; text no rule above reads: one character, so it loses to every rule that reads one or more
+   ;; (a tie goes to the earlier rule). The token carries the text from that character to the next
+   ;; space, so the error quotes what was written there (`@@`, `"a"`) — reading it after the lexer
+   ;; had failed quoted what FOLLOWED the failure (nothing for `@@`, `a"` for `"a"`).
+   [any-char (token 'UNRECOGNIZED (string-append lexeme (rest-of-word input-port)))]))
+
+;; rest-of-word : input-port -> String   the characters up to the next space, without reading them
+(define (rest-of-word ip)
+  (define s (peek-string 40 0 ip))
+  (if (eof-object? s) "" (car (regexp-split #rx"[ \t\r\n]" s))))
+
+;; unrecognized-message : String -> String   what to say of text no token reads
+(define (unrecognized-message text)
+  (format "unrecognized text `~a`~a" text
+          (if (regexp-match? #rx"^\"" text) " (a string is written in single quotes: 'text')" "")))
 
 ;; positioned : lexer-srcloc result -> token   the token with its line/column/position/span, so brag
 ;; reports parse errors there (token accessors downstream are unchanged); unmatched text is a
-;; positioned LEX diagnostic (fhir/diagnostic)
+;; positioned LEX diagnostic (fhir/diagnostic) at the character where it starts
 (define (positioned t)
   (cond [(srcloc-token? t)
          (define tok (srcloc-token-token t))
          (define sl (srcloc-token-srcloc t))
+         (when (and (token-struct? tok) (eq? (token-struct-type tok) 'UNRECOGNIZED))
+           (raise-diagnostic (diagnostic 'fhirpath 'lex 'error (unrecognized-message (token-struct-val tok))
+                                         (loc #f (srcloc-line sl) (let ([c (srcloc-column sl)]) (and c (add1 c)))
+                                              (srcloc-position sl) (string-length (token-struct-val tok))))))
          (if (token-struct? tok)
              (token (token-struct-type tok) (token-struct-val tok)
                     #:line (srcloc-line sl) #:column (srcloc-column sl)

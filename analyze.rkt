@@ -22,12 +22,11 @@
                   fp-typeop? fp-typeop-operand fp-typeop-type fp-var? fp-extern?
                   fp-invoke fp-call fp-index fp-typeop)
          (only-in "navigate.rkt" all-schema-fields resource-type-name?)
-         (only-in "types.rkt" fhir-ancestors)
-         (only-in fhir/model/registry type-schema-of type-registered?)
+         (only-in "types.rkt" fhir-ancestors primitive-codes registry-memo)
+         (only-in fhir/model/registry type-schema-of type-registered? type-registry-generation)
          (only-in fhir/model/schema
-                  type-schema-parent type-schema-fields schema-field-name schema-field-ftype
-                  schema-field-choice-base ftype-tag ftype-prim-code ftype-type-name
-                  inherited-field-names inherited-field-ftype))
+                  schema-field-name schema-field-ftype schema-field-choice-base
+                  ftype-tag ftype-prim-code ftype-type-name inherited-field-ftype))
 
 (provide (contract-out [analyze (->* (any/c (or/c symbol? #f)) (#:strict? boolean?) void?)]
                        [path-head (-> any/c (or/c symbol? #f))]
@@ -37,18 +36,45 @@
 ;; semantic error; mode="lenient/polymorphics" allows it.
 (define current-strict? (make-parameter #t))
 
-(define primitive-codes
-  '(base64Binary boolean canonical code date dateTime decimal id instant integer integer64
-    markdown oid positiveInt string time unsignedInt uri url uuid xhtml))
 (define framework-fields '(id extension modifierExtension meta implicitRules language text contained))
-(define string-fns '(startsWith endsWith contains matches matchesFull indexOf substring upper lower
+(define string-fns '(startsWith endsWith contains matches matchesFull indexOf lastIndexOf substring upper lower
                      replace replaceMatches length toChars split join trim))
 (define same-type-fns '(where first last tail single skip take distinct intersect exclude combine
                         union sort trace iif))
 
-;; analyze the AST against the seed element type; raise on a definite semantic error.
+;; analyze : ast Symbol|#f [#:strict? Boolean] -> Void
+;; check the AST against the seed element type; raise on a definite semantic error. The verdict
+;; depends only on the expression, the type and the mode, and an expression is evaluated over many
+;; resources of one type (an invariant, a search parameter, a view's column), so it is remembered
+;; per AST (by identity: `parse-fhirpath` answers one AST per text) for as long as the type
+;; registry is what it was. It was a quarter to a third of an evaluation.
 (define (analyze ast root-type #:strict? [strict? #t])
-  (parameterize ([current-strict? strict?]) (void (infer ast root-type))))
+  (define verdict (verdict-of ast root-type strict?))
+  (unless (eq? verdict 'ok)
+    (raise (exn:fp verdict (current-continuation-marks) 'semantic))))
+
+;; A Verdict is 'ok | String (the message of the semantic error)
+;; verdicts : (weak hasheq ast -> (hash (cons Symbol|#f Boolean) -> Verdict))
+(define verdicts (make-weak-hasheq))
+(define verdicts-generation -1)
+
+;; verdict-of : ast Symbol|#f Boolean -> Verdict
+(define (verdict-of ast root-type strict?)
+  (unless (eqv? verdicts-generation (type-registry-generation))
+    (hash-clear! verdicts)
+    (set! verdicts-generation (type-registry-generation)))
+  (define key (cons root-type strict?))
+  (define known (hash-ref verdicts ast #hash()))
+  (or (hash-ref known key #f)
+      (let ([verdict (check ast root-type strict?)])
+        (hash-set! verdicts ast (hash-set known key verdict))
+        verdict)))
+
+;; check : ast Symbol|#f Boolean -> Verdict   the static pass itself
+(define (check ast root-type strict?)
+  (with-handlers ([(lambda (e) (and (exn:fp? e) (eq? (exn:fp-kind e) 'semantic))) exn-message])
+    (parameterize ([current-strict? strict?]) (infer ast root-type))
+    'ok))
 
 ;; infer the element type produced by `ast` given the current element type `T` (or #f = unknown)
 (define (infer ast T)
@@ -73,7 +99,7 @@
     [(fp-call? ast) (infer-call ast T)]
     [else #f]))
 
-(define projection-fns '(where select all repeat aggregate iif sort exists trace))
+(define projection-fns '(where select all repeat repeatAll aggregate iif coalesce sort exists trace))
 (define (infer-call ast T)
   (define name (fp-call-name ast))
   (define args (fp-call-args ast))
@@ -90,7 +116,7 @@
   ;; projection args see the element type Tt; ordinary (eager) args see the outer type T.
   ;; repeat's projection runs at every level it reaches (`repeat(answer | item)` over a
   ;; QuestionnaireResponse, then its items and answers): no one type to check it against
-  (unless (memq name '(is as ofType repeat))
+  (unless (memq name '(is as ofType repeat repeatAll))
     (define ctx (if (memq name projection-fns) Tt T))
     (for ([a (in-list args)]) (infer a ctx)))
   (cond
@@ -159,30 +185,45 @@
     [(not (type-schema-of T)) #f]                       ; unknown/abstract type: don't check
     [(eq? name T) T]                                    ; resource-root self-reference
     [(and (memq name (fhir-ancestors T)) (memq 'Resource (fhir-ancestors name))) T] ; Resource.meta on a Condition
-    [(choice-base? name T) #f]                          ; polymorphic base -> unknown, allowed
-    [(assq name (field-index T))
-     => (lambda (entry)
-          (when (and (caddr entry) (current-strict?))    ; (b) direct expanded-choice access (strict)
-            (fp-error 'semantic (format "direct access to choice element ~a.~a" T name)))
-          (ftype->type (cadr entry)))]
-    [(memq name framework-fields) (ftype->type (inherited-field-ftype name))]
-    [else (fp-error 'semantic (format "no element ~a.~a~a" T name
-                                      (did-you-mean (symbol->string name)
-                                                    (map symbol->string
-                                                         (append (map car (field-index T))
-                                                                 (filter values (map caddr (field-index T)))
-                                                                 framework-fields)))))]))   ; (a)
+    [else
+     (define ms (members-of T))
+     (cond
+       [(hash-ref (members-bases ms) name #f) #f]       ; polymorphic base -> unknown, allowed
+       [(hash-ref (members-by-name ms) name #f)
+        => (lambda (m)
+             (when (and (cdr m) (current-strict?))      ; (b) direct expanded-choice access (strict)
+               (fp-error 'semantic (format "direct access to choice element ~a.~a" T name)))
+             (ftype->type (car m)))]
+       [(memq name framework-fields) (ftype->type (inherited-field-ftype name))]
+       [else (fp-error 'semantic (format "no element ~a.~a~a" T name
+                                         (did-you-mean (symbol->string name) (members-names ms))))])])) ; (a)
 
-;; field-index of a type: (listof (list name ftype choice-base?)) over generated ancestors
-(define index-cache (make-hasheq))
-(define (field-index T)
-  (hash-ref! index-cache T
-             (lambda ()
-               (for/list ([f (in-list (all-schema-fields T))])
-                 (list (schema-field-name f) (schema-field-ftype f) (schema-field-choice-base f))))))
+;; A Members is (members by-name bases names): the elements of a type, as tables —
+;;   by-name : (hasheq Symbol -> (cons ftype Symbol|#f))   an element's type and, for an expanded
+;;             choice member (valueQuantity), the base it expands (value)
+;;   bases   : (hasheq Symbol -> #t)                       the choice bases (value, deceased)
+;;   names   : (listof String)                             every name a path may use, for suggestions
+;; Every step of every path asks these; they were association lists scanned from the front
+;; (ElementDefinition has some four hundred entries).
+(struct members (by-name bases names))
 
-(define (choice-base? name T)
-  (for/or ([e (in-list (field-index T))]) (eq? (caddr e) name)))
+;; members-of : Symbol -> Members   over the type's generated ancestors, once per type
+(define members-of
+  (registry-memo
+   (lambda (T)
+     (define fields (all-schema-fields T))
+     (define-values (by-name bases)
+       (for/fold ([by-name (hasheq)] [bases (hasheq)]) ([f (in-list fields)])
+         (define name (schema-field-name f))
+         (define base (schema-field-choice-base f))
+         (values (if (hash-has-key? by-name name) by-name      ; the first declaration wins
+                     (hash-set by-name name (cons (schema-field-ftype f) base)))
+                 (if base (hash-set bases base #t) bases))))
+     (members by-name bases
+              (map symbol->string
+                   (append (map schema-field-name fields)
+                           (filter values (map schema-field-choice-base fields))
+                           framework-fields))))))
 
 (define (ftype->type ft)
   (case (ftype-tag ft)
@@ -196,6 +237,8 @@
 
 (module+ test
   (require rackunit (only-in fhir/r5/schemas) (only-in "parser/parse.rkt" parse-fhirpath))
+  (define (ok?/ast ast root #:strict? [strict? #t])
+    (with-handlers ([exn:fp? (lambda (_) #f)]) (analyze ast root #:strict? strict?) #t))
   (define (ok? s root #:strict? [strict? #t])
     (with-handlers ([exn:fp? (lambda (_) #f)]) (analyze (parse-fhirpath s) root #:strict? strict?) #t))
   ;; valid expressions do not raise
@@ -212,6 +255,18 @@
   (check-false (ok? "name.where(famly = 'x')" 'Patient #:strict? #f)) ; inside a projection's operator
   (check-true (ok? "name.where(family = 'x') | telecom.where(value.exists())" 'Patient #:strict? #f))
   (check-true (ok? "repeat(answer | item).linkId" 'QuestionnaireResponse))   ; sdcqr-2's shape
+  (check-true (ok? "repeatAll(answer | item).linkId" 'QuestionnaireResponse))
+  (check-true (ok? "coalesce(name.where(use = 'official'), name).given" 'Patient))
+  (check-false (ok? "coalesce(nmae, name)" 'Patient))                    ; arguments see the input
+  (check-false (ok? "identifier.lastIndexOf('x')" 'Patient))
+  ;; the verdict is remembered per expression and type, and says the same each time
+  (let ([ast (parse-fhirpath "status")])
+    (check-false (ok?/ast ast 'Patient))
+    (check-false (ok?/ast ast 'Patient))
+    (check-true (ok?/ast ast 'Observation) "another type: its own verdict"))
+  (let ([ast (parse-fhirpath "Observation.valueQuantity")])
+    (check-false (ok?/ast ast 'Observation))
+    (check-true (ok?/ast ast 'Observation #:strict? #f) "another mode: its own verdict"))
   (check-false (ok? "Observation.valueQuantity.exists()" 'Observation)) ; strict: direct choice access
   (check-false (ok? "(Observation.value as Period).unit" 'Observation))
   (check-false (ok? "Patient.children().skip(1)" 'Patient))        ; strict: ordered fn on unordered

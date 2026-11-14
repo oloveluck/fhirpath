@@ -124,3 +124,75 @@ Found writing the manual, each with a test that fails without the fix:
   of 1715 before, 1 now (the example parameter `part-agree`, whose base is not its expression's type).
 - `tests/cli-test.rkt` runs the three through `raco fhirpath`. Floors unchanged: R5 1044/1044, R4
   932/934, UCUM 573/573.
+
+## Quality, performance and specification pass (2026-11-14)
+Held to a dump of what the engine produces over its corpora (every HL7 suite expression: AST, print
+fixpoint, value strict and lenient, R5 and R4; every core SearchParameter: the static check per base
+and its values over ~390 resources; every core root constraint over every node of those resources;
+UCUM validity/canonical/display/suggestion over the functional tests' units): identical after each
+refactoring; every other difference is one of the changes below. Tests 299 -> 432; floors unchanged
+(R5 1044/1044, R4 932/934, UCUM 573/573, SearchParameters 26 refused).
+- **Speed** (same machine, medians; the machine's load rose during the pass, so later numbers are
+  pessimistic): the static pass over the 1,980 (search expression, base) pairs x20 630 -> 25 ms;
+  58,396 constraint evaluations 2.1 -> 1.1 s; 8,195 search-parameter evaluations 3.9 -> 0.84-1.4 s.
+  - `analyze` remembers its verdict per AST (by identity: `parse-fhirpath` answers one AST per text),
+    type and mode (`verdict-of`, a weak table cleared when `type-registry-generation` moves): it ran
+    on every evaluation and was a quarter to a third of one.
+  - `registry-memo` (types.rkt, exported): what depends only on a type, remembered per type for as
+    long as the registry is what it was — `fhir-ancestors` and `fhir-ancestors-strict` (one
+    `ancestor-chain`; the strict chain was rebuilt per `ofType` item, 15% of search),
+    `all-schema-fields`, `choice-members` (navigate.rkt: a table per type; a miss scanned every field),
+    `members-of` (analyze.rkt: the elements as hash tables; `resolve` scanned association lists,
+    ElementDefinition's ~400 entries, a third of the static pass). `fhir-ancestors`'s range contract
+    is `list?` (checking every symbol was a tenth of the pass).
+  - A type specifier is read once (`type-spec`: `System.Integer` -> `(System . Integer)`; it was split
+    at its dot per item). Literals are read from their lexemes once per literal (`lit->coll`, weak by
+    identity; an error literal is not remembered). A variable scope is a box over an immutable hash
+    (environment.rkt): opening one at every `|` operand, argument and projected item was a copy of a
+    mutable table.
+  - Parsing stays brag's: lexing the 2,389 distinct expressions takes 45 ms, brag ~3.6 s (98%,
+    ~140 µs a token), lowering 4 ms. A precedence-climbing parser over the same tokens would make a
+    first parse ~50x cheaper; `parse-fhirpath` memoises by text, so it matters for one-off texts
+    (the CLI, a workspace query, the TCK runs). Left: contract wrappers on fhirpath's own
+    cross-module calls (eval -> navigate/functions/operators/types) are now ~30% of evaluation; an
+    unchecked submodule for in-package callers would remove most of it.
+- **Regular expressions** (regex.rkt, new): FHIRPath recommends PCRE; Racket's pregexp refuses a
+  `]` outside a class and a `{`/`}` that is no repetition, has no named groups, and reads `&`/`\1` in
+  a substitution. `translate-pattern` escapes those, drops `(?<name>`/`(?P<name>` keeping the names;
+  `regex-replace` applies `$n`/`${name}` itself (`&` is literal: it was the match); `compile-pattern`
+  remembers by (pattern, flags) — compiling was 42% of a view with reference keys and a quarter of
+  the constraint workload. A bad pattern is `exn:fp` 'execution (it was a raw `pregexp:` exn:fail).
+  BEHAVIOUR: FHIR's eld-20 (`(\\[x])?`) compiled on no ElementDefinition: it now holds on all 2,602
+  (R5) and 1,719 (R4) of the dump — the validator evaluates it now.
+- **Spec alignment** (each with a test that fails without it):
+  - `truncate()`/`floor()`/`ceiling()` answer an Integer (N1), not a scale-0 Decimal; a non-singleton
+    input is an error; `round(-1)` is an `exn:fp` (it was a contract violation).
+  - `toInteger()`/`toDecimal()` (and convertsTo…) read strings by N1's patterns: `'#x10'` was 16
+    (Racket's reader), `'1e3'` 1000.
+  - A bare unit is a calendar word (the grammar's dateTimePrecision | plural): `5 mg` was read as
+    `5 'mg'`; it is a parse error at the word (`check-bare-units!`, parse.rkt, over the tokens:
+    NUMBER then IDENTIFIER is always a quantity). 13,584 published expressions: none affected.
+  - `print.rkt` writes a calendar duration bare (`5 days`, it was `5 'days'`); this engine reads both
+    as the same value, and print∘parse stays a fixpoint. `calendar-word?` (parser/ast.rkt) is the one
+    list; quantity.rkt's `calendar-unit?` and operators.rkt use it and `calendar-ucum`.
+  - Text no rule lexes is quoted from where it starts (`@@`, `"a"`; a last single-character rule,
+    `UNRECOGNIZED`): it quoted what followed the failure (nothing for `@@`); a double quote adds that
+    strings take single quotes (eld-11 writes `contains(":")`).
+  - Beyond N1 (the current build, STU): `coalesce` (lazy), `lastIndexOf`, `toLong`/`convertsToLong`,
+    `sum`/`min`/`max`/`avg` (one type, else an execution error), `yearOf` … `millisecondOf`,
+    `timezoneOffsetOf`, `dateOf`, `timeOf`, `repeatAll` (stopped past 100,000 items), the `i`/`m`
+    flags of matches/matchesFull/replaceMatches, `combine`'s second argument; the static pass knows
+    repeatAll/coalesce/lastIndexOf. FHIR's memberOf/subsumes/subsumedBy/htmlChecks/elementDefinition/
+    slice/checkModifiers/weight and duration/difference/pathname say they are not implemented and
+    what they need (`not-implemented`), instead of "unknown function".
+- **Quality**: `member=?`/`distinct=` in equality.rkt (operators.rkt's `dedup` and functions.rkt's
+  `dedup=`/`member-of?` were two copies); equality.rkt's `as-dec` is value.rkt's `as-decimal`;
+  `primitive-codes` defined once (types.rkt); navigate.rkt lost its dead `valid-member?` and
+  `framework-fields`; analyze.rkt lost unused imports.
+- **Decided against**: the `as` OPERATOR on several items stays a filter (the current build makes it
+  an error; FHIR's search parameters write `Observation.component.value as Quantity`); the signed
+  zero (`fp-decimal` would need a sign on exact zero — its struct is used by cql — for one R4 case
+  the R5 suite passes by value); double-quoted strings (the current grammar adds `\"` as an escape,
+  not a string form). Left: `duration`/`difference` (calendar boundaries and whole periods per
+  precision, with the timezone rules), `sort`'s `asc`/`desc` keywords (a grammar change; `-` works),
+  the LONGNUMBER literal (`2L`), instance selectors, `pathname`.

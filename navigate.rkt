@@ -9,12 +9,11 @@
 
 (require racket/contract
          racket/list
-         racket/set
          "error.rkt"
          (only-in fhir/model/node fhir? fhir-type fhir-fields fhir-ref fhir-has?)
          (only-in fhir/model/base primitive-type? element-extension element-id)
          (only-in "value.rkt" typeinfo? typeinfo-namespace typeinfo-name)
-         (only-in "types.rkt" fhir-ancestors)
+         (only-in "types.rkt" fhir-ancestors registry-memo)
          (only-in fhir/model/registry type-schema-of type-registered?)
          (only-in fhir/model/schema
                   type-schema-parent type-schema-fields schema-field-name schema-field-choice-base))
@@ -61,33 +60,33 @@
 
 (define (listify v) (if (list? v) v (list v)))
 
-;; every schema-field of a type, climbing generated ancestors (constraint types, etc.)
-(define (all-schema-fields type)
-  (let loop ([t type] [acc '()])
-    (define sch (type-schema-of t))
-    (if (not sch) acc (loop (type-schema-parent sch) (append acc (type-schema-fields sch))))))
+;; all-schema-fields : Symbol -> (listof schema-field)
+;; every schema-field of a type, climbing generated ancestors (constraint types, etc.); worked out
+;; once per type
+(define all-schema-fields
+  (registry-memo
+   (lambda (type)
+     (let loop ([t type] [acc '()])
+       (define sch (type-schema-of t))
+       (if (not sch) acc (loop (type-schema-parent sch) (append acc (type-schema-fields sch))))))))
 
 ;; a registered resource type name (Capitalized; distinct from lowercase element names)
 (define (resource-type-name? name)
   (and (type-registered? name) (memq 'Resource (fhir-ancestors name)) #t))
 
-(define (choice-members-for type name)
-  (for/list ([f (in-list (all-schema-fields type))] #:when (eq? (schema-field-choice-base f) name))
-    (schema-field-name f)))
+;; choice-members : Symbol -> (hasheq Symbol -> (listof Symbol))
+;; a type's choice elements: base name -> its expanded members, in schema order (value ->
+;; valueQuantity valueString …). Asked for every name a node does not hold, so it is a table per
+;; type (it was a scan of every field of the type per miss).
+(define choice-members
+  (registry-memo
+   (lambda (type)
+     (for/fold ([h (hasheq)]) ([f (in-list (reverse (all-schema-fields type)))])
+       (define base (schema-field-choice-base f))
+       (if base (hash-update h base (lambda (ms) (cons (schema-field-name f) ms)) '()) h)))))
 
-;; the framework fields present on (almost) every element/resource
-(define framework-fields '(id extension modifierExtension meta implicitRules language text contained))
-
-;; is `name` a defined element of `type` (own/ancestor field, a choice base, or a framework field)?
-(define valid-cache (make-hash))
-(define (valid-member? type name)
-  (define valid (hash-ref! valid-cache type
-                           (lambda ()
-                             (define fs (all-schema-fields type))
-                             (for/fold ([s (list->seteq framework-fields)]) ([f (in-list fs)])
-                               (set-add (set-add s (schema-field-name f))
-                                        (or (schema-field-choice-base f) (schema-field-name f)))))))
-  (set-member? valid name))
+;; choice-members-for : Symbol Symbol -> (listof Symbol)
+(define (choice-members-for type name) (hash-ref (choice-members type) name '()))
 
 ;; all immediate child values of an item (nodes -> every present field value; primitives -> its
 ;; extensions). Order is unspecified (a hash walk), matching FHIRPath's unordered children().
@@ -97,3 +96,26 @@
      (append-map (lambda (v) (listify v)) (hash-values (fhir-fields item)))]
     [(primitive-type? item) (element-extension item)]
     [else '()]))
+
+(module+ test
+  (require rackunit (only-in fhir/r5/schemas) (only-in fhir/model/node fhir))
+  ;; a choice element's members, in schema order; a name that is no choice base has none
+  (check-not-false (memq 'valueQuantity (choice-members-for 'Observation 'value)))
+  (check-not-false (memq 'deceasedBoolean (choice-members-for 'Patient 'deceased)))
+  (check-equal? (choice-members-for 'Patient 'name) '())
+  (check-equal? (choice-members-for 'NoSuchType 'value) '())
+  (check-equal? (choice-members-for 'Observation 'value)
+                (for/list ([f (in-list (all-schema-fields 'Observation))]
+                           #:when (eq? (schema-field-choice-base f) 'value))
+                  (schema-field-name f)))
+  (check-true (resource-type-name? 'Patient))
+  (check-false (resource-type-name? 'HumanName))
+  (check-false (resource-type-name? 'name))
+  ;; navigation: a present field, a choice base, a type's own name, another type's name
+  (define obs (fhir 'Observation (hasheq 'status "final" 'valueString "x")))
+  (check-equal? (navigate (list obs) 'status) '("final"))
+  (check-equal? (navigate (list obs) 'value) '("x"))
+  (check-equal? (navigate (list obs) 'Observation) (list obs))
+  (check-equal? (navigate (list obs) 'Resource) (list obs))
+  (check-equal? (navigate (list obs) 'subject) '())
+  (check-exn #rx"Patient is not the context" (lambda () (navigate (list obs) 'Patient))))

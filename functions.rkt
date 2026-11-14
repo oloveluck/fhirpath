@@ -23,21 +23,24 @@
          "error.rkt"
          (only-in fhir/model/node fhir? fhir-type fhir-ref)
          (only-in fhir/model/base primitive-type? element-extension element-id)
-         (only-in "value.rkt" item->system item-fhir-type value-less? fp-quantity fp-quantity?
+         (only-in "value.rkt" item->system item-fhir-type item-system-type value-less? fp-quantity fp-quantity?
                   fp-quantity-value fp-quantity-unit fp-quantity-calendar? fp-long fp-long? fp-long-v as-decimal)
          (only-in "types.rkt" item-is? item-of-type? known-type? type-info-of)
          (only-in "value.rkt" typeinfo)
          (only-in "navigate.rkt" node-children navigate)
-         (only-in "equality.rkt" item=? item-equiv?)
+         (only-in "equality.rkt" member=? distinct=)
          (only-in "decimal.rkt" fp-decimal? parse-decimal integer->decimal decimal->exact
                   decimal->string decimal-round decimal-precision fp-decimal decimal-cmp)
          (only-in "temporal-ops.rkt" value->moment moment? moment-kind moment->string parse-fp-date calendar-problem
                   parse-fp-datetime parse-fp-time moment moment-year moment-month moment-day
-                  moment-compare moment-prec moment-frac moment-boundary)
+                  moment-compare moment-prec moment-frac moment-boundary moment-hour moment-minute
+                  moment-second moment-tzmin)
          (only-in "quantity.rkt" make-quantity quantity->string calendar-unit? quantity-compare)
          (only-in "environment.rkt" env-with-item env-with-this env-with-total env-define-var
                   env-clone-vars env-var-bound? env-this env-root)
          (only-in "terminology.rkt" tx-service? tx-service-expand tx-service-validate tx-service-translate)
+         (only-in "regex.rkt" regex-matches? regex-replace)
+         (only-in "operators.rkt" apply-binop)
          (only-in "parser/ast.rkt" fp-invoke? fp-invoke-name fp-invoke-target
                   fp-unop? fp-unop-op fp-unop-operand)
          (only-in fhir/serialize/to-json node->jsexpr)
@@ -62,7 +65,10 @@
 ;; the per-item projection context.
 (define (apply-function name subject arg-asts env ev focus)
   (define f (hash-ref TABLE name #f))
-  (unless f (fp-error 'semantic (format "unknown function ~a()" name)))
+  (unless f
+    (fp-error 'semantic (cond [(hash-ref not-implemented name #f)
+                               => (lambda (why) (format "~a() is not implemented here: ~a" name why))]
+                              [else (format "unknown function ~a()" name)])))
   (define n (length arg-asts))
   (when (or (< n (fn-min f)) (> n (fn-max f)))
     (fp-error 'semantic (format "~a() arity: got ~a args" name n)))
@@ -70,6 +76,21 @@
       ((fn-proc f) subject arg-asts env ev)
       ;; each argument evaluates in its own scope frame (sibling args are independent)
       ((fn-proc f) subject (map (lambda (a) (ev a focus (env-clone-vars env))) arg-asts) env ev)))
+
+;; not-implemented : (hash Symbol -> String)   functions FHIR or the current build defines that this
+;; engine does not, and what each would need; using one says so (it was "unknown function")
+(define not-implemented
+  (hasheq 'memberOf "FHIR's memberOf() needs a terminology service (%terminologies.validateVS() is one way)"
+          'subsumes "FHIR's subsumes() needs a terminology service"
+          'subsumedBy "FHIR's subsumedBy() needs a terminology service"
+          'htmlChecks "FHIR's htmlChecks() checks narrative XHTML, which this engine does not read"
+          'elementDefinition "FHIR's elementDefinition() needs the StructureDefinition an element was validated against"
+          'slice "FHIR's slice() needs the profile the resource was validated against"
+          'checkModifiers "FHIR's checkModifiers() needs the profiles in context"
+          'weight "FHIR's weight() needs the ordinal values of a value set"
+          'duration "the current build's duration() is not implemented"
+          'difference "the current build's difference() is not implemented"
+          'pathname "the current build's pathname() is not implemented"))
 
 ;; ---- reading the subject and the arguments --------------------------------------------------
 ;; sing : Coll -> Item | 'empty   the one item, or an execution error on several
@@ -202,7 +223,8 @@
 (def! 'isDistinct (lambda (s a e ev) (bool-coll (= (length s) (length (dedup= s))))))
 (def! 'intersect #:min 1 #:max 1 (lambda (s a e ev) (dedup= (filter (lambda (x) (member-of? x (car a))) s))))
 (def! 'exclude   #:min 1 #:max 1 (lambda (s a e ev) (filter (lambda (x) (not (member-of? x (car a)))) s)))
-(def! 'combine   #:min 1 #:max 1 (lambda (s a e ev) (append s (car a))))
+;; combine(other [, preserveOrder]): the order is always kept (the current build's second argument)
+(def! 'combine   #:min 1 #:max 2 (lambda (s a e ev) (append s (car a))))
 (def! 'union     #:min 1 #:max 1 (lambda (s a e ev) (dedup= (append s (car a)))))
 (def! 'subsetOf  #:min 1 #:max 1 (lambda (s a e ev) (bool-coll (for/and ([x s]) (member-of? x (car a))))))
 (def! 'supersetOf #:min 1 #:max 1 (lambda (s a e ev) (bool-coll (for/and ([x (car a)]) (member-of? x s)))))
@@ -219,6 +241,13 @@
 (def! 'select #:lazy? #t #:min 1 #:max 1
       (lambda (s a e ev) (append-map (lambda (x i) (ev (car a) (list x) (proj-env e x i))) s (range (length s)))))
 (def! 'repeat #:lazy? #t #:min 1 #:max 1 (lambda (s a e ev) (repeat-proj s (car a) e ev)))
+;; beyond N1 (the current build, STU): repeatAll keeps duplicates; coalesce is the first non-empty
+;; argument, the later ones not evaluated
+(def! 'repeatAll #:lazy? #t #:min 1 #:max 1 (lambda (s a e ev) (repeat-all s (car a) e ev)))
+(def! 'coalesce #:lazy? #t #:min 1 #:max 100
+      (lambda (s a e ev)
+        (define e* (env-with-this e s))
+        (or (for/or ([arg (in-list a)]) (let ([v (ev arg s e*)]) (and (pair? v) v))) '())))
 
 ;; boolean / iif -------------------------------------------------------------------------------
 (def! 'not (lambda (s a e ev)
@@ -242,6 +271,9 @@
 (def! 'toBoolean (lambda (s a e ev) (conv s ->boolean)))
 (def! 'toQuantity #:max 1 (lambda (s a e ev) (conv s ->quantity)))
 (def! 'convertsToInteger (lambda (s a e ev) (converts s ->integer)))
+;; beyond N1: Long (64-bit)
+(def! 'toLong (lambda (s a e ev) (conv s ->long)))
+(def! 'convertsToLong (lambda (s a e ev) (converts s ->long)))
 (def! 'convertsToDecimal (lambda (s a e ev) (converts s ->decimal)))
 (def! 'convertsToBoolean (lambda (s a e ev) (converts s ->boolean)))
 (def! 'convertsToString  (lambda (s a e ev) (converts s (lambda (x) (item->string x)))))
@@ -268,13 +300,17 @@
 (def! 'endsWith   #:min 1 #:max 1 (lambda (s a e ev) (str2 s a string-suffix?)))
 (def! 'contains   #:min 1 #:max 1 (lambda (s a e ev) (str2 s a string-contains?)))
 (def! 'indexOf    #:min 1 #:max 1 (lambda (s a e ev) (str2 s a index-of-substring)))
-(def! 'matches    #:min 1 #:max 1 (lambda (s a e ev) (str2 s a (lambda (x p) (regexp-match? (pregexp p) x)))))
-(def! 'matchesFull #:min 1 #:max 1
-      (lambda (s a e ev) (str2 s a (lambda (x p) (regexp-match? (pregexp (string-append "^(?:" p ")$")) x)))))
+;; beyond N1: lastIndexOf ('' is at the end: the string's length)
+(def! 'lastIndexOf #:min 1 #:max 1 (lambda (s a e ev) (str2 s a last-index-of-substring)))
+;; matches / matchesFull / replaceMatches read PCRE (regex.rkt); the optional flags (`i`, `m`) are
+;; the current build's, beyond N1
+(def! 'matches    #:min 1 #:max 2 (lambda (s a e ev) (str2 s a (lambda (x p) (regex-matches? x p (flags-arg a 1))))))
+(def! 'matchesFull #:min 1 #:max 2
+      (lambda (s a e ev) (str2 s a (lambda (x p) (regex-matches? x p (flags-arg a 1) #:full? #t)))))
 (def! 'substring  #:min 1 #:max 2 (lambda (s a e ev) (do-substring s a)))
 (def! 'replace    #:min 2 #:max 2 (lambda (s a e ev) (str3 s a string-replace)))
-(def! 'replaceMatches #:min 2 #:max 2
-      (lambda (s a e ev) (str3 s a (lambda (x p r) (if (string=? p "") x (regexp-replace* (pregexp p) x r))))))
+(def! 'replaceMatches #:min 2 #:max 3
+      (lambda (s a e ev) (str3 s a (lambda (x p r) (regex-replace x p r (flags-arg a 2))))))
 (def! 'split  #:min 1 #:max 1 (lambda (s a e ev) (let ([x (str1 s)] [p (str1 (car a))])
                                                    (if (and x p) (string-split x p #:trim? #f) '()))))
 ;; join: empty input -> empty result (per spec; SQL-on-FHIR's null columns rely on it)
@@ -293,10 +329,11 @@
                    (cond [(fp-quantity? x) (list (fp-quantity (dec-abs (fp-quantity-value x))
                                                               (fp-quantity-unit x) #f))]
                          [(as-decimal (car s)) => (lambda (d) (list (dec-abs d)))] [else '()])))))
-(def! 'truncate (lambda (s a e ev) (num-d1 s (lambda (r) (integer->decimal (trunc r))))))
-(def! 'floor    (lambda (s a e ev) (num-d1 s (lambda (r) (integer->decimal (floor r))))))
-(def! 'ceiling  (lambda (s a e ev) (num-d1 s (lambda (r) (integer->decimal (ceiling r))))))
-(def! 'round    #:max 1 (lambda (s a e ev) (num1 s (lambda (d) (decimal-round d (or (int1 (if (null? a) '() (car a))) 0))))))
+;; truncate / floor / ceiling answer an Integer (N1: `: Integer`; they answered a Decimal of scale 0)
+(def! 'truncate (lambda (s a e ev) (num-d1 s trunc)))
+(def! 'floor    (lambda (s a e ev) (num-d1 s floor)))
+(def! 'ceiling  (lambda (s a e ev) (num-d1 s ceiling)))
+(def! 'round    #:max 1 (lambda (s a e ev) (num1 s (lambda (d) (decimal-round d (round-precision a))))))
 (def! 'sqrt (lambda (s a e ev) (num-flo1 s (lambda (x) (and (>= x 0) (sqrt x))))))
 (def! 'exp  (lambda (s a e ev) (num-flo1 s exp)))
 (def! 'ln   (lambda (s a e ev) (num-flo1 s (lambda (x) (and (> x 0) (log x))))))
@@ -420,6 +457,33 @@
                     (list (and (fp-quantity? qa) (fp-quantity? qb)
                                (not (eq? (quantity-compare qa qb) 'empty))))])))
 
+;; aggregates beyond N1 (the current build, STU): sum, min, max, avg over items of one type ---------
+(def! 'sum (lambda (s a e ev) (if (null? s) '() (aggregate-of 'sum s (lambda (acc x) (apply-binop '+ acc x))))))
+(def! 'min (lambda (s a e ev) (if (null? s) '() (aggregate-of 'min s (lambda (acc x) (if (equal? (apply-binop '< x acc) '(#t)) x acc))))))
+(def! 'max (lambda (s a e ev) (if (null? s) '() (aggregate-of 'max s (lambda (acc x) (if (equal? (apply-binop '> x acc) '(#t)) x acc))))))
+(def! 'avg
+      (lambda (s a e ev)
+        (cond [(null? s) '()]
+              [else (define total (aggregate-of 'avg s (lambda (acc x) (apply-binop '+ acc x))))
+                    (define t (item->system (car total)))
+                    (define as-dec (if (fp-quantity? t) total (list (as-decimal (car total)))))
+                    (apply-binop '/ as-dec (list (integer->decimal (length s))))])))
+
+;; aggregate-of : Symbol Coll (Coll Coll -> Coll) -> Coll
+;; fold `step` over the items as one-item collections; the items SHALL be of one type (an Integer
+;; among Decimals is one; the specification throws otherwise), and of a type the aggregate takes
+(define (aggregate-of who s step)
+  (define kinds (remove-duplicates (map (lambda (x) (item-system-type x)) s)))
+  (define allowed (case who
+                    [(sum) '(Integer Long Decimal Quantity)]
+                    [(avg) '(Integer Long Decimal Quantity)]
+                    [else '(Integer Long Decimal Quantity Date DateTime Time String)]))
+  (unless (and (= (length kinds) 1) (memq (car kinds) allowed))
+    (fp-error 'execution (format "~a() needs items of one type among ~a, not ~a" who
+                                 (string-join (map symbol->string allowed) ", ")
+                                 (string-join (map (lambda (k) (if k (symbol->string k) "complex")) kinds) " and "))))
+  (for/fold ([acc (list (car s))]) ([x (in-list (cdr s))]) (step acc (list x))))
+
 ;; ---- projection -----------------------------------------------------------------------------
 ;; proj-env : Env Item Nat -> Env
 ;; the env of one projected item: $this/$index bound, and its own variable scope (a
@@ -441,15 +505,28 @@
     (if (null? fresh) (reverse out)
         (loop fresh (append fresh seen) (append (reverse fresh) out)))))
 
-;; member-of? : Item Coll -> Boolean   is an equal (=) item in the collection?
-(define (member-of? x coll) (for/or ([y coll]) (item=? x y)))
-;; dedup= : Coll -> Coll   the distinct items under =, first occurrences in order
-(define (dedup= coll) (let loop ([xs coll] [acc '()])
-                        (cond [(null? xs) (reverse acc)]
-                              [(member-of? (car xs) acc) (loop (cdr xs) acc)]
-                              [else (loop (cdr xs) (cons (car xs) acc))])))
+;; repeat-all : Coll ast Env Evaluator -> Coll
+;; repeatAll(projection): every level's projected items, duplicates kept, in discovery order. A
+;; projection that keeps finding items (`'abc'.repeatAll('x')`) is stopped (the specification: an
+;; implementation SHOULD guard against infinite loops).
+(define repeat-all-limit 100000)
+(define (repeat-all s crit e ev)
+  (let loop ([current s] [out '()] [n 0])
+    (define proj (append-map (lambda (x) (ev crit (list x) (proj-env e x 0))) current))
+    (define n* (+ n (length proj)))
+    (cond [(null? proj) (reverse out)]
+          [(> n* repeat-all-limit)
+           (fp-error 'execution (format "repeatAll() found more than ~a items: does its projection keep finding the same ones?" repeat-all-limit))]
+          [else (loop proj (append (reverse proj) out) n*)])))
+
+;; member-of? / dedup= : the set functions' `=`, one definition (equality.rkt; operators.rkt's `|`
+;; and `in` use the same)
+(define member-of? member=?)
+(define dedup= distinct=)
 
 ;; ---- strings --------------------------------------------------------------------------------
+;; flags-arg : Args Nat -> String | #f   the optional regex flags argument at position k
+(define (flags-arg a k) (and (> (length a) k) (str1 (list-ref a k))))
 ;; str-op : Coll (String -> X) -> Coll   f over the subject string; empty when there is none
 (define (str-op s f) (let ([x (str1 s)]) (if x (list (f x)) '())))
 ;; str2 : Coll Args (String String -> X) -> Coll   f over the subject and one string argument
@@ -462,6 +539,12 @@
   (let loop ([i 0]) (cond [(> (+ i (string-length p)) (string-length x)) -1]
                           [(string=? (substring x i (+ i (string-length p))) p) i]
                           [else (loop (add1 i))])))
+;; last-index-of-substring : String String -> Integer   the last position of p in x, -1 when absent
+(define (last-index-of-substring x p)
+  (let loop ([i (- (string-length x) (string-length p))])
+    (cond [(< i 0) -1]
+          [(string=? (substring x i (+ i (string-length p))) p) i]
+          [else (loop (sub1 i))])))
 ;; do-substring : Coll Args -> Coll   substring(start [, length]); empty when start is outside
 (define (do-substring s a)
   (define x (str1 s))
@@ -486,14 +569,20 @@
   (define v (item->system x))
   (cond [(exact-integer? v) v] [(fp-long? v) (fp-long-v v)]
         [(boolean? v) (if v 1 0)]
-        [(string? v) (let ([n (string->number v)]) (if (exact-integer? n) n 'no))]
+        [(and (string? v) (regexp-match? #px"^[+-]?[0-9]+$" v)) (string->number v)]   ; N1: (\+|-)?\d+
         [else 'no]))
+;; ->long : Converter   an integer that fits 64 bits, as a Long
+(define (->long x)
+  (define n (->integer x))
+  (if (and (exact-integer? n) (<= (- (expt 2 63)) n (sub1 (expt 2 63)))) (fp-long n) 'no))
 ;; ->decimal : Converter
 (define (->decimal x)
   (define v (item->system x))
   (cond [(fp-decimal? v) v] [(exact-integer? v) (integer->decimal v)] [(fp-long? v) (integer->decimal (fp-long-v v))]
         [(boolean? v) (integer->decimal (if v 1 0))]
-        [(string? v) (or (parse-decimal v) 'no)] [else 'no]))
+        ;; N1: (\+|-)?\d+(\.\d+)? — no exponent (parse-decimal reads one: it reads FHIR JSON too)
+        [(and (string? v) (regexp-match? #px"^[+-]?[0-9]+(?:[.][0-9]+)?$" v)) (parse-decimal v)]
+        [else 'no]))
 ;; ->boolean : Converter
 (define (->boolean x)
   (define v (item->system x))
@@ -542,6 +631,39 @@
 ;; strip@ / strip-T : String -> String   a literal's leading `@` / `T`, dropped
 (define (strip@ s) (if (and (> (string-length s) 0) (char=? (string-ref s 0) #\@)) (substring s 1) s))
 (define (strip-T s) (if (and (> (string-length s) 0) (char=? (string-ref s 0) #\T)) (substring s 1) s))
+
+;; ---- date/time components (beyond N1: the current build, STU) -------------------------------
+;; component : Symbol (Moment -> X|#f) -> Fn proc   the component of a singleton Date/DateTime/Time
+;; of the kinds given; empty when it is absent or the item is another kind
+(define (component kinds f)
+  (lambda (s a e ev)
+    (define x (sing s))
+    (define m (and (not (eq? x 'empty)) (value->moment (item->system x))))
+    (define v (and m (memq (moment-kind m) kinds) (f m)))
+    (if v (list v) '())))
+(def! 'yearOf   (component '(date dateTime) moment-year))
+(def! 'monthOf  (component '(date dateTime) (lambda (m) (and (>= (moment-prec m) 2) (moment-month m)))))
+(def! 'dayOf    (component '(date dateTime) (lambda (m) (and (>= (moment-prec m) 3) (moment-day m)))))
+(def! 'hourOf   (component '(dateTime time) (lambda (m) (moment-hour m))))
+(def! 'minuteOf (component '(dateTime time) (lambda (m) (and (moment-hour m) (moment-minute m)))))
+(def! 'secondOf (component '(dateTime time) (lambda (m) (and (moment-minute m) (moment-second m)))))
+(def! 'millisecondOf
+      (component '(dateTime time)
+                 (lambda (m) (and (moment-second m)
+                                  (let ([f (moment-frac m)])
+                                    (if f (string->number (substring (string-append f "00") 0 3)) 0))))))
+(def! 'timezoneOffsetOf
+      (component '(dateTime) (lambda (m) (and (moment-tzmin m) (let ([h (/ (moment-tzmin m) 60)])
+                                                                  (fp-decimal h (if (integer? h) 1 2)))))))
+(def! 'dateOf
+      (component '(date dateTime)
+                 (lambda (m) (moment 'date (moment-year m) (moment-month m) (moment-day m) #f #f #f #f #f
+                                     (min 3 (moment-prec m))))))
+(def! 'timeOf
+      (component '(dateTime)
+                 (lambda (m) (and (moment-hour m)
+                                  (moment 'time #f #f #f (moment-hour m) (moment-minute m) (moment-second m)
+                                          (moment-frac m) #f (moment-prec m))))))
 
 ;; ---- the clock ------------------------------------------------------------------------------
 ;; p2 : Nat -> String   two digits
@@ -673,9 +795,15 @@
       (let ([d (as-decimal (sing s))]) (if d (list (f d)) '()))))
 ;; dec-abs : Decimal -> Decimal
 (define (dec-abs d) (if (< (decimal->exact d) 0) (neg d) d))
-;; num-d1 : Coll (Rational -> X) -> Coll   f over the first item's exact value
+;; num-d1 : Coll (Rational -> X) -> Coll   f over the singleton's exact value
 (define (num-d1 s f)
-  (if (null? s) '() (let ([d (as-decimal (car s))]) (if d (list (f (decimal->exact d))) '()))))
+  (if (null? s) '() (let ([d (as-decimal (sing s))]) (if d (list (f (decimal->exact d))) '()))))
+;; round-precision : Args -> Nat   round()'s digits: 0 when absent, an error when negative (N1)
+(define (round-precision a)
+  (define n (and (pair? a) (int1 (car a))))
+  (cond [(not n) 0]
+        [(< n 0) (fp-error 'execution (format "round(): the precision must be 0 or more, not ~a" n))]
+        [else n]))
 ;; num-flo1 : Coll (Flonum -> Real | #f) -> Coll   f in floating point, back to a Decimal
 (define (num-flo1 s f)
   (if (null? s) '()
@@ -720,6 +848,10 @@
   (define (lit-ev ast focus env) (list (fp-lit-value ast)))
   (define (call name subject . args)
     (apply-function name subject (map fp-lit args) (make-env subject) lit-ev subject))
+  ;; call/colls : Symbol Coll Coll ... -> Coll   arguments given as whole collections
+  (define (coll-ev ast focus env) (fp-lit-value ast))
+  (define (call/colls name subject . args)
+    (apply-function name subject (map fp-lit args) (make-env subject) coll-ev subject))
 
   ;; dispatch: the catalogue, arity, and the error kinds
   (check-true (function-known? 'where))
@@ -761,6 +893,13 @@
   (check-equal? (call 'toInteger '("7")) '(7))
   (check-equal? (call 'toInteger '("x")) '())
   (check-equal? (call 'convertsToInteger '("x")) '(#f))
+  ;; strings convert by N1's patterns: `'#x10'` read as Racket's hex was 16, `'1e3'` 1000
+  (check-equal? (->integer "#x10") 'no)
+  (check-equal? (->integer "+7") 7)
+  (check-equal? (->decimal "1e3") 'no)
+  (check-equal? (->decimal "#e1.5") 'no)
+  (check-equal? (decimal->string (->decimal "-2.50")) "-2.50")
+  (check-equal? (call 'convertsToDecimal '("1e3")) '(#f))
   (check-equal? (call 'toString '(#t)) '("true"))
 
   ;; strings
@@ -776,6 +915,15 @@
   (check-equal? (call 'replaceMatches '("abc") "" "#") '("abc"))   ; an empty pattern is a no-op
   (check-equal? (call 'matchesFull '("abc") "ab") '(#f))
   (check-equal? (call 'matches '("abc") "ab") '(#t))
+  ;; PCRE: a `]` outside a class is literal (FHIR's eld-20 failed on every ElementDefinition), a
+  ;; substitution names groups as $1 / ${name} and `&` is itself; flags; a bad pattern is FHIRPath's error
+  (check-equal? (call 'matches '("value[x]") "^[a-z]+(\\[x])?$") '(#t))
+  (check-equal? (call 'replaceMatches '("a.b") "[.]" "&") '("a&b"))
+  (check-equal? (call 'replaceMatches '("ab") "(?<x>b)" "<${x}$1>") '("a<bb>"))
+  (check-equal? (call 'matches '("ABC") "b" "i") '(#t))
+  (check-equal? (call 'replaceMatches '("aBc") "b" "-" "i") '("a-c"))
+  (check-exn (lambda (x) (and (exn:fp? x) (regexp-match? #rx"invalid regular expression" (exn-message x))))
+             (lambda () (call 'matches '("a") "(")))
   (check-equal? (call 'split '("a,b,,c") ",") '("a" "b" "" "c"))
   (check-equal? (call 'join '("a" "b") "-") '("a-b"))
   (check-equal? (call 'join '()) '())
@@ -790,7 +938,12 @@
   ;; math
   (check-equal? (map decimal->string (call 'abs (list (parse-decimal "-1.50")))) '("1.50"))
   (check-equal? (map decimal->string (call 'round (list (parse-decimal "2.345")) 2)) '("2.35"))
-  (check-equal? (map decimal->string (call 'truncate (list (parse-decimal "-2.7")))) '("-2"))
+  (check-equal? (call 'truncate (list (parse-decimal "-2.7"))) '(-2))     ; an Integer, not a Decimal
+  (check-equal? (call 'floor (list (parse-decimal "-2.1"))) '(-3))
+  (check-equal? (call 'ceiling (list (parse-decimal "1.1"))) '(2))
+  (check-equal? (call 'floor '(1)) '(1))
+  (check-exn #rx"singleton" (lambda () (call 'floor '(1 2))))
+  (check-exn #rx"precision must be 0 or more" (lambda () (call 'round (list (parse-decimal "1.5")) -1)))
   (check-equal? (map decimal->string (call 'sqrt '(16))) '("4.0"))     ; through floating point
   (check-equal? (call 'sqrt '(-1)) '())
   (check-equal? (map decimal->string (call 'log '(8) 2)) '("3.0"))
@@ -798,6 +951,36 @@
   (check-equal? (decimal->string (dec-boundary (parse-decimal "1.5") 2 #f)) "1.55")
   (check-false (dec-boundary (parse-decimal "1") 29 #t))
   (check-equal? (map decimal->string (call 'lowBoundary (list (parse-decimal "1.5")) 2)) '("1.45"))
+
+  ;; beyond N1: lastIndexOf, coalesce, toLong, the aggregates, the components, repeatAll, combine's order
+  (check-equal? (call 'lastIndexOf '("abc abc") "a") '(4))
+  (check-equal? (call 'lastIndexOf '("0123") "") '(4))
+  (check-equal? (call 'lastIndexOf '("abc") "x") '(-1))
+  (check-equal? (call/colls 'coalesce '(1) '() '("b") '("c")) '("b"))
+  (check-equal? (call/colls 'coalesce '(1) '() '()) '())
+  (check-equal? (call 'toLong '("123")) (list (fp-long 123)))
+  (check-equal? (call 'toLong '("99999999999999999999")) '())
+  (check-equal? (call 'convertsToLong '("abc")) '(#f))
+  (check-equal? (call 'sum '(1 2 3)) '(6))
+  (check-equal? (map decimal->string (call 'sum (list (parse-decimal "1.0") (parse-decimal "2.5")))) '("3.5"))
+  (check-equal? (call 'min '(2 4 1)) '(1))
+  (check-equal? (call 'max '("a" "c" "b")) '("c"))
+  (check-equal? (call 'sum '()) '())
+  (check-equal? (map decimal->string (call 'avg '(1 2))) '("1.5"))
+  (check-exn #rx"one type" (lambda () (call 'sum (list 1 "a"))))
+  (check-exn #rx"one type" (lambda () (call 'sum '(#t #f))))
+  (check-equal? (call 'yearOf (list (->datetime "2014-01-05T10:30:00.000"))) '(2014))
+  (check-equal? (call 'monthOf (list (->date "2012"))) '())
+  (check-equal? (call 'hourOf (list (->datetime "2012-01-01T16:30:40.002-07:00"))) '(16))
+  (check-equal? (call 'millisecondOf (list (->datetime "2012-01-01T12:30:00.002-07:00"))) '(2))
+  (check-equal? (map decimal->string (call 'timezoneOffsetOf (list (->datetime "2012-01-01T12:30:00.000-07:00")))) '("-7.0"))
+  (check-equal? (map decimal->string (call 'timezoneOffsetOf (list (->datetime "2012-01-01T12:30:00.000+08:45")))) '("8.75"))
+  (check-equal? (map moment->string (call 'dateOf (list (->datetime "2012-01-01T12:30:00.000-07:00")))) '("@2012-01-01"))
+  (check-equal? (map moment->string (call 'timeOf (list (->datetime "2012-01-01T12:30:00.000-07:00")))) '("@T12:30:00.000"))
+  (check-equal? (call 'yearOf (list (->time "10:00"))) '())
+  (check-equal? (call/colls 'combine '(1 1 2) '(2 3) '(#t)) '(1 1 2 2 3))
+  (check-exn #rx"memberOf[(][)] is not implemented here: FHIR.s memberOf[(][)] needs a terminology service"
+             (lambda () (call 'memberOf '("a") "http://x")))
 
   ;; sort, precision
   (check-equal? (call 'sort '(3 1 2)) '(1 2 3))

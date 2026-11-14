@@ -254,7 +254,8 @@ mercury; 152 mm[Hg] is a little over 20 kPa, so the systolic component is the an
 Units of different kinds cannot be compared or added. @fp{1 'kg' > 3 'cm'} prints nothing (there
 is no answer), and @fp{1 'kg' + 3 'cm'} is the error @tt{incompatible quantity units}.
 
-Spans of time are written without quotes: @fp{18 years}, @fp{3 days}.
+Spans of time are written without quotes: @fp{18 years}, @fp{3 days}. Only those words go without
+quotes: @fp{5 mg} is the error @tt{`mg` is no calendar duration … a UCUM unit is quoted, 5 'mg'}.
 
 @subsection{Names that start with %}
 
@@ -425,10 +426,21 @@ names, not that it meets a profile's rules. Use the validator for that.}
 @item{@bold{Terminology.} @fp{%terminologies} has @fp{expand()}, @fp{validateVS()} and
 @fp{translate()}; it does not have @fp{lookup()}, @fp{validateCS()}, @fp{subsumes()} or
 @fp{memberOf()}.}
-@item{@bold{Newer functions.} These additions of FHIRPath 3.0 are not implemented: @tt{lastIndexOf},
-@tt{coalesce}, @tt{sum}, @tt{min}, @tt{max}, @tt{avg}, @tt{toLong}, the @tt{yearOf} …
-@tt{millisecondOf} components, @tt{dateOf}, @tt{timeOf}, @tt{duration}, @tt{difference},
-@tt{repeatAll}. Using one is the error @tt{unknown function sum()}.}
+@item{@bold{Newer functions.} Of FHIRPath 3.0's additions, @tt{duration}, @tt{difference} and
+@tt{pathname} are not implemented, nor are the sort keywords @tt{asc} and @tt{desc} (write
+@fp{sort(-$this)} for descending); FHIR's @tt{memberOf}, @tt{subsumes}, @tt{subsumedBy},
+@tt{htmlChecks}, @tt{elementDefinition}, @tt{slice}, @tt{checkModifiers} and @tt{weight} are not
+either. Using one is an error that names what it would need: @tt{memberOf() is not implemented
+here: FHIR's memberOf() needs a terminology service …}. The others are: @tt{lastIndexOf},
+@tt{coalesce}, @tt{sum}, @tt{min}, @tt{max}, @tt{avg}, @tt{toLong}, @tt{yearOf} …
+@tt{millisecondOf}, @tt{timezoneOffsetOf}, @tt{dateOf}, @tt{timeOf}, @tt{repeatAll}, and the
+@tt{i}/@tt{m} flags of @tt{matches}, @tt{matchesFull} and @tt{replaceMatches}.}
+@item{@bold{Regular expressions} are read as PCRE, which the specification recommends (a @tt{]}
+or @tt{@"{"} that starts nothing is a literal, @tt{(?<name>…)} is a group), and run by Racket's
+@tt{pregexp}: a construct only PCRE has, such as a possessive @tt{a*+} or @tt{\K}, may still fail.}
+@item{@bold{The type operator @fp{as}} keeps the items of the type when there are several
+(@fp{Observation.component.value as Quantity}), as FHIR's own search parameters are written; the
+current specification makes several items an error, and the function @fp{as()} is one here.}
 @item{@bold{The check before running is cautious.} It stops as soon as it no longer knows the type
 it is looking at (after @fp{resolve()}, a step that can be several types, or a function it does not
 model). So it never refuses a valid expression of that kind, and it does not catch every mistake.}

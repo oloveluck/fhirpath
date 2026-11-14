@@ -28,7 +28,7 @@ Every value is a collection, and an empty collection is "nothing": a test on not
 not false. `where`, `exists`, `all`, `select`, `first`, `count`, `ofType`, `is` and `as` are the
 workhorses. `value` is a choice, so read `value.ofType(Quantity)`, not `valueQuantity`. Strings use
 single quotes; dates and times start with `@` (`@2024-01-01`, `@T10:30`); a quantity is a number and
-a unit (`5 'mg'`, `3 days`). `%loinc`, `%sct` and `%ucum` name the code systems; `%resource` is the
+a unit: a UCUM unit in quotes (`5 'mg'`), a calendar duration bare (`3 days`). `%loinc`, `%sct` and `%ucum` name the code systems; `%resource` is the
 resource the expression started from.
 
 ## Worked examples
@@ -113,8 +113,16 @@ file. Resources are read with the workspace's FHIR version (R4 for 4.0.1).
   expression from the end until a value appears (or `explain` it in a workspace).
 - A comparison is empty, not false: one side is empty (`{} = 1` is `{}`), or two dates differ in
   precision (`@2024 = @2024-01-01` is `{}`). Use `exists()`, `empty()` or `~` when that matters.
-- `unknown function`: FHIRPath 3.0's additions such as `sum()`, `min()`, `max()`, `avg()`,
-  `coalesce()`, `yearOf()` are not implemented (the manual lists them); `iif`, `aggregate` and the
-  FHIR functions are.
+- `` `mg` is no calendar duration ``: a bare word after a number is a calendar duration (`3 days`);
+  a UCUM unit is quoted, `5 'mg'`.
+- `memberOf() is not implemented here`: FHIR's `memberOf()`, `subsumes()`, `htmlChecks()`,
+  `elementDefinition()`, `slice()`, `checkModifiers()`, `weight()` and the current build's
+  `duration()`, `difference()`, `pathname()` are not; the message says what each would need.
+  Beyond N1 these are implemented: `coalesce()`, `lastIndexOf()`, `sum()`, `min()`, `max()`,
+  `avg()`, `toLong()`, `yearOf()` … `millisecondOf()`, `timezoneOffsetOf()`, `dateOf()`, `timeOf()`,
+  `repeatAll()`, `matches(re, flags)`.
+- Regular expressions are read as PCRE (a `]` outside a class is a literal); `replaceMatches` names
+  groups in the substitution as `$1` or `${name}`, and `&` there is just `&`.
+- `unrecognized text `"…"``: strings are in single quotes, `'text'`.
 - In a workspace, `say which resources the expression reads`: start the expression with a type, or
   pass `over`.
