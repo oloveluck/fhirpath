@@ -7,19 +7,19 @@
 ;;; so an unreached erroring branch doesn't fire.
 
 (require racket/contract racket/match
-         "error.rkt"
+         (submod "error.rkt" unchecked)
          "parser/ast.rkt"
-         "environment.rkt"
-         (only-in "navigate.rkt" navigate)
-         (only-in "value.rkt" item->system fp-long)
-         (only-in "operators.rkt" apply-binop apply-unary)
-         (only-in "types.rkt" item-is? item-of-type? known-type?)
-         (only-in "analyze.rkt" analyze union-branch)
+         (submod "environment.rkt" unchecked)
+         (only-in (submod "navigate.rkt" unchecked) navigate)
+         (only-in (submod "value.rkt" unchecked) item->system fp-long)
+         (only-in (submod "operators.rkt" unchecked) apply-binop apply-unary)
+         (only-in (submod "types.rkt" unchecked) item-is? item-of-type? known-type?)
+         (only-in (submod "analyze.rkt" unchecked) analyze union-branch)
          (only-in fhir/model/node fhir? fhir-type)
-         (only-in "functions.rkt" apply-function)
-         (only-in "decimal.rkt" parse-decimal integer->decimal)
-         (only-in "quantity.rkt" make-quantity)
-         (only-in "temporal-ops.rkt" parse-fp-date parse-fp-datetime parse-fp-time calendar-problem))
+         (only-in (submod "functions.rkt" unchecked) apply-function)
+         (only-in (submod "decimal.rkt" unchecked) parse-decimal integer->decimal)
+         (only-in (submod "quantity.rkt" unchecked) make-quantity)
+         (only-in (submod "temporal-ops.rkt" unchecked) parse-fp-date parse-fp-datetime parse-fp-time calendar-problem))
 
 (provide (contract-out
           [eval-fhirpath (->* (any/c list?) (#:externals hash? #:strict? boolean?) list?)]

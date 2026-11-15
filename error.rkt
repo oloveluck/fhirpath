@@ -6,7 +6,10 @@
 (require racket/contract)
 
 (provide (struct-out exn:fp)
-         (contract-out [fp-error (->* (symbol? string?) () any)]))
+         (contract-out #:unprotected-submodule unchecked [fp-error (->* (symbol? string?) () any)]))
+;; In-package callers require (submod "error.rkt" unchecked): the same names without their
+;; contracts (the contracts are for callers outside the package).
+(module+ unchecked (provide (struct-out exn:fp)))
 
 (struct exn:fp exn:fail (kind) #:transparent)
 

@@ -17,10 +17,10 @@
 ;;; A pattern that does not compile is an execution error, said as FHIRPath's.
 
 (require racket/contract racket/string racket/list
-         "error.rkt")
+         (submod "error.rkt" unchecked))
 
 (provide
- (contract-out
+ (contract-out #:unprotected-submodule unchecked
   ;; regex-matches? : String String [String] [#:full? Boolean] -> Boolean
   [regex-matches?  (->* (string? string?) ((or/c string? #f) #:full? boolean?) boolean?)]
   ;; regex-replace : String String String [String] -> String   every match replaced
@@ -28,6 +28,8 @@
   ;; translate-pattern : String -> (values String (listof (or/c String #f)))
   ;; the pattern as pregexp reads it, and each group's name (#f for an unnamed group), in order
   [translate-pattern (-> string? (values string? list?))]))
+;; In-package callers require (submod "regex.rkt" unchecked): the same names without their
+;; contracts (the contracts are for callers outside the package).
 
 ;; A Compiled is (compiled rx names): the pregexp and the names of its groups by number (1-based).
 (struct compiled (rx names))

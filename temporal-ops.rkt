@@ -16,7 +16,7 @@
 
 (provide
  (struct-out moment)
- (contract-out
+ (contract-out #:unprotected-submodule unchecked
   [parse-fp-date     (-> string? (or/c moment? #f))]
   [calendar-problem  (-> (or/c moment? #f) (or/c string? #f))]
   [parse-fp-datetime (-> string? (or/c moment? #f))]
@@ -29,6 +29,9 @@
   [moment-plus       (-> moment? exact-integer? string? moment?)]
   [moment-add-ms     (-> moment? exact-integer? moment?)]
   [moment-boundary   (-> moment? exact-integer? boolean? (or/c moment? #f))]))
+;; In-package callers require (submod "temporal-ops.rkt" unchecked): the same names without their
+;; contracts (the contracts are for callers outside the package).
+(module+ unchecked (provide (struct-out moment)))
 
 ;; kind: 'date|'dateTime|'time ; components #f when absent ; prec: 1=year…6=second (time:4..6)
 ;; tzmin: timezone offset in minutes, or #f

@@ -9,14 +9,14 @@
 
 (require racket/contract racket/list racket/string
          (only-in fhir/model/node fhir? fhir-type fhir-ref fhir-field-names fhir-has?)
-         (only-in "value.rkt" item->system fp-quantity? as-decimal)
-         (only-in "decimal.rkt" decimal-cmp fp-decimal-scale
+         (only-in (submod "value.rkt" unchecked) item->system fp-quantity? as-decimal)
+         (only-in (submod "decimal.rkt" unchecked) decimal-cmp fp-decimal-scale
                   decimal-round)
-         (only-in "temporal-ops.rkt" value->moment moment? moment-equal? moment-equiv?)
-         (only-in "quantity.rkt" quantity-compare quantity-equiv?))
+         (only-in (submod "temporal-ops.rkt" unchecked) value->moment moment? moment-equal? moment-equiv?)
+         (only-in (submod "quantity.rkt" unchecked) quantity-compare quantity-equiv?))
 
 (provide
- (contract-out
+ (contract-out #:unprotected-submodule unchecked
   [coll-equal (-> list? list? (or/c 'true 'false 'empty))]
   [coll-equiv (-> list? list? boolean?)]
   [item-equal? (-> any/c any/c (or/c 'true 'false 'empty))]
@@ -28,6 +28,8 @@
   ;; distinct, intersect, repeat)
   [distinct=   (-> list? list?)]
   [item-equiv? (-> any/c any/c boolean?)]))
+;; In-package callers require (submod "equality.rkt" unchecked): the same names without their
+;; contracts (the contracts are for callers outside the package).
 
 ;; ---- collection equality (=) ----------------------------------------------------------------
 (define (coll-equal a b)

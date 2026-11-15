@@ -7,7 +7,7 @@
 
 (provide
  (struct-out env)
- (contract-out
+ (contract-out #:unprotected-submodule unchecked
   [make-env       (->* (any/c) (#:root any/c #:externals hash?) env?)]
   [env-with-item  (-> env? any/c exact-nonnegative-integer? env?)]
   [env-with-this  (-> env? list? env?)]
@@ -16,6 +16,9 @@
   [env-define-var (-> env? string? any/c env?)]
   [env-var-bound? (-> env? string? boolean?)]
   [env-lookup-external (-> env? string? (or/c list? #f))]))
+;; In-package callers require (submod "environment.rkt" unchecked): the same names without their
+;; contracts (the contracts are for callers outside the package).
+(module+ unchecked (provide (struct-out env)))
 
 ;; this  : the current focus collection (for $this)
 ;; index : the current iteration index (for $index)

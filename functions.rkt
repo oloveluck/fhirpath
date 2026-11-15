@@ -20,36 +20,38 @@
 ;;; A function on a missing or empty input answers '(); a singleton is demanded with `sing`.
 
 (require racket/contract racket/list racket/string racket/math racket/date
-         "error.rkt"
+         (submod "error.rkt" unchecked)
          (only-in fhir/model/node fhir? fhir-type fhir-ref)
          (only-in fhir/model/base primitive-type? element-extension element-id)
-         (only-in "value.rkt" item->system item-fhir-type item-system-type value-less? fp-quantity fp-quantity?
+         (only-in (submod "value.rkt" unchecked) item->system item-fhir-type item-system-type value-less? fp-quantity fp-quantity?
                   fp-quantity-value fp-quantity-unit fp-quantity-calendar? fp-long fp-long? fp-long-v as-decimal)
-         (only-in "types.rkt" item-is? item-of-type? known-type? type-info-of)
-         (only-in "value.rkt" typeinfo)
-         (only-in "navigate.rkt" node-children navigate)
-         (only-in "equality.rkt" member=? distinct=)
-         (only-in "decimal.rkt" fp-decimal? parse-decimal integer->decimal decimal->exact
+         (only-in (submod "types.rkt" unchecked) item-is? item-of-type? known-type? type-info-of)
+         (only-in (submod "value.rkt" unchecked) typeinfo)
+         (only-in (submod "navigate.rkt" unchecked) node-children navigate)
+         (only-in (submod "equality.rkt" unchecked) member=? distinct=)
+         (only-in (submod "decimal.rkt" unchecked) fp-decimal? parse-decimal integer->decimal decimal->exact
                   decimal->string decimal-round decimal-precision fp-decimal decimal-cmp)
-         (only-in "temporal-ops.rkt" value->moment moment? moment-kind moment->string parse-fp-date calendar-problem
+         (only-in (submod "temporal-ops.rkt" unchecked) value->moment moment? moment-kind moment->string parse-fp-date calendar-problem
                   parse-fp-datetime parse-fp-time moment moment-year moment-month moment-day
                   moment-compare moment-prec moment-frac moment-boundary moment-hour moment-minute
                   moment-second moment-tzmin)
-         (only-in "quantity.rkt" make-quantity quantity->string calendar-unit? quantity-compare)
-         (only-in "environment.rkt" env-with-item env-with-this env-with-total env-define-var
+         (only-in (submod "quantity.rkt" unchecked) make-quantity quantity->string calendar-unit? quantity-compare)
+         (only-in (submod "environment.rkt" unchecked) env-with-item env-with-this env-with-total env-define-var
                   env-clone-vars env-var-bound? env-this env-root)
          (only-in "terminology.rkt" tx-service? tx-service-expand tx-service-validate tx-service-translate)
-         (only-in "regex.rkt" regex-matches? regex-replace)
-         (only-in "operators.rkt" apply-binop)
+         (only-in (submod "regex.rkt" unchecked) regex-matches? regex-replace)
+         (only-in (submod "operators.rkt" unchecked) apply-binop)
          (only-in "parser/ast.rkt" fp-invoke? fp-invoke-name fp-invoke-target
                   fp-unop? fp-unop-op fp-unop-operand)
          (only-in fhir/serialize/to-json node->jsexpr)
          (only-in fhir/operation parameters->inputs)
          (only-in net/base64 base64-encode base64-decode))
 
-(provide (contract-out
+(provide (contract-out #:unprotected-submodule unchecked
           [function-known? (-> symbol? boolean?)]
           [apply-function  (-> symbol? list? (listof any/c) any/c procedure? list? list?)]))
+;; In-package callers require (submod "functions.rkt" unchecked): the same names without their
+;; contracts (the contracts are for callers outside the package).
 
 ;; ---- dispatch -------------------------------------------------------------------------------
 (struct fn (proc lazy? min max) #:transparent)

@@ -11,7 +11,7 @@
 
 (provide
  (struct-out fp-decimal)
- (contract-out
+ (contract-out #:unprotected-submodule unchecked
   [parse-decimal    (-> string? (or/c fp-decimal? #f))]
   [integer->decimal (-> exact-integer? fp-decimal?)]
   [decimal->exact   (-> fp-decimal? rational?)]
@@ -24,6 +24,9 @@
   [decimal-cmp  (-> fp-decimal? fp-decimal? (or/c -1 0 1))]
   [decimal-round (-> fp-decimal? exact-nonnegative-integer? fp-decimal?)]
   [decimal-negate (-> fp-decimal? fp-decimal?)]))
+;; In-package callers require (submod "decimal.rkt" unchecked): the same names without their
+;; contracts (the contracts are for callers outside the package).
+(module+ unchecked (provide (struct-out fp-decimal)))
 
 ;; rat : exact rational value ; scale : fractional digits carried (for precision/rendering)
 (struct fp-decimal (rat scale) #:transparent)

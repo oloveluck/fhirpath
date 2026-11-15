@@ -152,8 +152,8 @@ refactoring; every other difference is one of the changes below. Tests 299 -> 43
     mutable table.
   - Parsing was brag's: lexing the 2,389 distinct expressions takes 45 ms, brag ~3.6 s (98%,
     ~140 µs a token), lowering 4 ms. Done since: see "Read by descent, held to the grammar" below.
-    Left: contract wrappers on fhirpath's own cross-module calls (eval -> navigate/functions/operators/types) are now ~30% of evaluation; an
-    unchecked submodule for in-package callers would remove most of it.
+    Contract wrappers on fhirpath's own cross-module calls (eval -> navigate/functions/operators/
+    types) were then ~40% of evaluation: gone since, see "Contracts at the boundary" below.
 - **Regular expressions** (regex.rkt, new): FHIRPath recommends PCRE; Racket's pregexp refuses a
   `]` outside a class and a `{`/`}` that is no repetition, has no named groups, and reads `&`/`\1` in
   a substitution. `translate-pattern` escapes those, drops `(?<name>`/`(?P<name>` keeping the names;
@@ -224,3 +224,44 @@ of FHIRPath text, and `parser/descent.rkt` (`descend-program`) reads it fast:
   package indexes, and repeated expressions were already memoised. Floors unchanged (R5 1044/1044,
   R4 932/934, UCUM 573/573); tests 432 -> 454.
 
+## Contracts at the boundary (2026-11-15)
+The engine's modules call one another without contracts; callers outside the package (cql, fml,
+fsh, sql-on-fhir, fhir-validation, fhir-server) get every contract they had.
+- **The profile** (sampler, before any change; `contract-profile` is not installed): on the core
+  constraints over every node of 388 resources, 43% of the samples were in racket/contract's own
+  frames (arrow wrappers, keyword checking, `or/c`/`listof` range checks), on the search parameters
+  40%. They were the wrappers on eval -> navigate/operators/functions/types/value/equality/
+  environment calls, and one per call of every `registry-memo` table imported by navigate.rkt and
+  analyze.rkt (the memo was provided as `(-> (-> any/c any/c) (-> any/c any/c))`, so the remembered
+  function came back wrapped).
+- **The change**: each engine module (error, value, decimal, temporal-ops, environment, quantity,
+  equality, operators, functions, navigate, types, regex, ucum, analyze) provides with
+  `(contract-out #:unprotected-submodule unchecked …)` — one list — and a module with `struct-out`s
+  adds them to the same submodule (`(module+ unchecked (provide (struct-out …)))`), so an engine
+  module requires `(submod "x.rkt" unchecked)` with the `only-in` list it had. eval.rkt (whose
+  `eval-fhirpath`/`fp-eval` are the boundary), print, render, the CLI, workspace and support keep the
+  contracted interfaces. `tests/contracts-test.rkt`: a bad argument from outside is still refused,
+  blaming the caller (one function per module), every engine module offers `unchecked`, and no
+  engine module (or eval.rkt) imports another's contracted interface — a planted
+  `(only-in "navigate.rkt" navigate)` in eval.rkt fails it.
+- **Then, what the profile showed next** (behaviour-preserving): the foundation's `fhir-has?` then
+  `fhir-ref` on every step (two lookups, each through fhir/model/node's contract: a quarter of what
+  remained) are one `hash-ref` on `fhir-fields`, the struct's own accessor (navigate.rkt
+  `field-values`); `known-type?` (every `is`/`as`/`ofType`) and `resource-type-name?` (every step a
+  node does not hold, every union) are remembered by `registry-memo` (the registry's answer changes
+  only with its generation); `registry-memo` reads the generation once a call (it was twice, each
+  through the foundation's contract). `analyze`'s `resolve` asks `fhir-ancestors` of two different
+  types, both memo hits, and the static pass does not show in the profiles; regex.rkt's
+  `compile-pattern` cache already covers matches/replaceMatches (its lookup is ~3%; the rest is the
+  matching itself). What remains in contract frames (~10%) is the boundary itself (the bench's
+  calls of `eval-fhirpath`) and the foundation's `type-registry-generation`.
+- **Measured** (one machine, back to back, medians of 3): the constraint workload (58,396
+  evaluations x3) 792 -> 356 ms (the unchecked submodules alone: -> ~500); the search parameters
+  (8,195 x5) 1,006 -> 379 ms (alone: -> ~494); the HL7 suite's expressions x20 82 -> 44 ms; a
+  ViewDefinition of nine columns and a forEach over 3,440 eCQM Encounters read as R4, in process (x3)
+  456 -> 383 ms. Whole commands are startup: `raco fhirpath --tck r5` 1.91 -> 1.88 s, `--tck r4`
+  0.60 -> 0.58 s, loading fhirpath/eval 0.34 s both, `raco sql-on-fhir run` of that view 1.52 ->
+  1.55–1.68 s over three runs of nine (noise: reading the files and from-json are its time). The
+  behaviour dump (every suite expression strict and lenient, every SearchParameter's static check and
+  values, every root constraint on every node, R5 and R4; UCUM) is identical. Floors unchanged (R5
+  1044/1044, R4 932/934, UCUM 573/573, SearchParameters 26 refused); tests 454 -> 457.

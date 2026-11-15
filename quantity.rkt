@@ -5,15 +5,15 @@
 ;;; value+unit rendering. UCUM cross-unit conversion is wired here once the engine lands.
 
 (require racket/contract
-         (only-in "value.rkt" fp-quantity fp-quantity? fp-quantity-value fp-quantity-unit
+         (only-in (submod "value.rkt" unchecked) fp-quantity fp-quantity? fp-quantity-value fp-quantity-unit
                   fp-quantity-calendar?)
-         (only-in "decimal.rkt" fp-decimal fp-decimal? decimal-cmp decimal->string decimal-add
+         (only-in (submod "decimal.rkt" unchecked) fp-decimal fp-decimal? decimal-cmp decimal->string decimal-add
                   decimal-sub decimal->exact decimal-precision integer->decimal parse-decimal)
-         (only-in "ucum.rkt" ucum-canonical ucum-commensurable?)
+         (only-in (submod "ucum.rkt" unchecked) ucum-canonical ucum-commensurable?)
          (only-in "parser/ast.rkt" calendar-word?))
 
 (provide
- (contract-out
+ (contract-out #:unprotected-submodule unchecked
   [make-quantity   (-> fp-decimal? string? fp-quantity?)]
   [calendar-unit?  (-> string? boolean?)]
   ;; calendar-ucum : String -> String   a calendar word's UCUM code for the exact-length ones
@@ -24,6 +24,8 @@
   [quantity->string (-> fp-quantity? string?)]
   [quantity-add    (-> fp-quantity? fp-quantity? (or/c fp-quantity? #f))]
   [quantity-sub    (-> fp-quantity? fp-quantity? (or/c fp-quantity? #f))]))
+;; In-package callers require (submod "quantity.rkt" unchecked): the same names without their
+;; contracts (the contracts are for callers outside the package).
 
 (define calendar-singular '("year" "month" "week" "day" "hour" "minute" "second" "millisecond"))
 ;; calendar-unit? : String -> Boolean   a calendar duration word, singular or plural (the grammar's)

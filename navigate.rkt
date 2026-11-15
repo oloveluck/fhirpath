@@ -9,21 +9,23 @@
 
 (require racket/contract
          racket/list
-         "error.rkt"
-         (only-in fhir/model/node fhir? fhir-type fhir-fields fhir-ref fhir-has?)
+         (submod "error.rkt" unchecked)
+         (only-in fhir/model/node fhir? fhir-type fhir-fields)
          (only-in fhir/model/base primitive-type? element-extension element-id)
-         (only-in "value.rkt" typeinfo? typeinfo-namespace typeinfo-name)
-         (only-in "types.rkt" fhir-ancestors registry-memo)
+         (only-in (submod "value.rkt" unchecked) typeinfo? typeinfo-namespace typeinfo-name)
+         (only-in (submod "types.rkt" unchecked) fhir-ancestors registry-memo)
          (only-in fhir/model/registry type-schema-of type-registered?)
          (only-in fhir/model/schema
                   type-schema-parent type-schema-fields schema-field-name schema-field-choice-base))
 
 (provide
- (contract-out
+ (contract-out #:unprotected-submodule unchecked
   [navigate       (-> list? symbol? list?)]        ; a collection . member -> a collection
   [node-children  (-> any/c list?)]                ; all immediate children (for children()/descendants)
   [all-schema-fields (-> symbol? (listof any/c))]
   [resource-type-name? (-> symbol? boolean?)]))    ; a registered resource type's name
+;; In-package callers require (submod "navigate.rkt" unchecked): the same names without their
+;; contracts (the contracts are for callers outside the package).
 
 (define (navigate coll name)
   (append-map (lambda (item) (navigate-one item name)) coll))
@@ -32,8 +34,10 @@
   (cond
     [(fhir? item)
      (define type (fhir-type item))
+     (define fields (fhir-fields item))
+     (define held (hash-ref fields name no-field))
      (cond
-       [(fhir-has? item name) (listify (fhir-ref item name))]
+       [(not (eq? held no-field)) (listify held)]
        ;; resource-root self-reference: `Patient.name` where the focus IS a Patient — or is a
        ;; SUBTYPE of the named type: `Resource.meta.lastUpdated` / `DomainResource.text` on a
        ;; Condition (FHIR's own SearchParameters and invariants are written this way)
@@ -47,8 +51,7 @@
         ;; value[x] choice: collect present expanded members whose choice-base is `name`.
         ;; Otherwise absent -> empty (runtime navigation is lenient; unknown-element detection is
         ;; a static concern handled by analyze.rkt against the known root type).
-        (append-map (lambda (m) (if (fhir-has? item m) (listify (fhir-ref item m)) '()))
-                    (choice-members-for type name))])]
+        (append-map (lambda (m) (field-values fields m)) (choice-members-for type name))])]
     [(primitive-type? item)
      (case name
        [(extension) (element-extension item)]
@@ -60,6 +63,16 @@
 
 (define (listify v) (if (list? v) v (list v)))
 
+;; A node's fields are read from its table directly (`fhir-fields`, the struct's own accessor): a
+;; step is one lookup, where `fhir-has?` then `fhir-ref` were two, each through fhir/model/node's
+;; contract: those were about a quarter of evaluating the core constraints once the engine's own
+;; contracts were gone (CLAUDE.md, "Contracts at the boundary").
+(define no-field (string->uninterned-symbol "no-field"))
+;; field-values : (hash Symbol -> Value) Symbol -> Coll   a field's values; none when it is absent
+(define (field-values fields name)
+  (define held (hash-ref fields name no-field))
+  (if (eq? held no-field) '() (listify held)))
+
 ;; all-schema-fields : Symbol -> (listof schema-field)
 ;; every schema-field of a type, climbing generated ancestors (constraint types, etc.); worked out
 ;; once per type
@@ -70,9 +83,12 @@
        (define sch (type-schema-of t))
        (if (not sch) acc (loop (type-schema-parent sch) (append acc (type-schema-fields sch))))))))
 
-;; a registered resource type name (Capitalized; distinct from lowercase element names)
-(define (resource-type-name? name)
-  (and (type-registered? name) (memq 'Resource (fhir-ancestors name)) #t))
+;; resource-type-name? : Symbol -> Boolean   a registered resource type's name (Capitalized; distinct
+;; from lowercase element names); asked at every step a node does not hold, so once per name
+;; while the registry is what it was
+(define resource-type-name?
+  (registry-memo
+   (lambda (name) (and (type-registered? name) (memq 'Resource (fhir-ancestors name)) #t))))
 
 ;; choice-members : Symbol -> (hasheq Symbol -> (listof Symbol))
 ;; a type's choice elements: base name -> its expanded members, in schema order (value ->

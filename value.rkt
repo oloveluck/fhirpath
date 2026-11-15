@@ -18,14 +18,14 @@
          (only-in fhir/model/registry value->fhir-spec fhir-spec-name)
          (only-in fhir/primitives/absent absent?)
          (only-in fhir/primitives/primitives t-date? t-time? t-datetime?)
-         (only-in "temporal-ops.rkt" moment? moment-kind)
-         (only-in "decimal.rkt" fp-decimal? parse-decimal integer->decimal))
+         (only-in (submod "temporal-ops.rkt" unchecked) moment? moment-kind)
+         (only-in (submod "decimal.rkt" unchecked) fp-decimal? parse-decimal integer->decimal))
 
 (provide
  (struct-out fp-quantity)
  (struct-out fp-long)
  (struct-out typeinfo)
- (contract-out
+ (contract-out #:unprotected-submodule unchecked
   [item->system     (-> any/c any/c)]
   [item-fhir-type   (-> any/c (or/c symbol? #f))]
   [item-system-type (-> any/c (or/c symbol? #f))]
@@ -33,6 +33,9 @@
   [prim-item?       (-> any/c boolean?)]
   [value-less?      (-> any/c boolean?)]
   [as-decimal       (-> any/c (or/c fp-decimal? #f))]))
+;; In-package callers require (submod "value.rkt" unchecked): the same names without their
+;; contracts (the contracts are for callers outside the package).
+(module+ unchecked (provide (struct-out fp-quantity) (struct-out fp-long) (struct-out typeinfo)))
 
 ;; a System.Quantity ; value is an fp-decimal ; unit a UCUM code or calendar keyword string
 (struct fp-quantity (value unit calendar?) #:transparent)

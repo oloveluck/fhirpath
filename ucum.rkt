@@ -15,7 +15,7 @@
                   entity? entity-text))
 
 (provide
- (contract-out
+ (contract-out #:unprotected-submodule unchecked
   [ucum-canonical    (-> string? (or/c (cons/c rational? vector?) #f))]
   [ucum-commensurable? (-> string? string? boolean?)]
   [ucum-convert      (-> rational? string? string? (or/c rational? #f))]
@@ -29,6 +29,8 @@
   ;; the official suite's displayNameGeneration: "m" -> "(meter)", "m3.kg-1" ->
   ;; "(meter ^ 3) * (kilogram ^ -1)"; #f when an atom has no name in the essence
   [ucum-display      (-> string? (or/c string? #f))]))
+;; In-package callers require (submod "ucum.rkt" unchecked): the same names without their
+;; contracts (the contracts are for callers outside the package).
 
 (define-runtime-path essence-path "ucum/ucum-essence.xml")
 

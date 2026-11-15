@@ -13,7 +13,7 @@
 
 (require (only-in fhir/suggest did-you-mean)
          racket/contract
-         "error.rkt"
+         (submod "error.rkt" unchecked)
          (only-in "parser/ast.rkt"
                   fp-lit? fp-invoke? fp-invoke-target fp-invoke-name
                   fp-call? fp-call-target fp-call-name fp-call-args
@@ -21,16 +21,18 @@
                   fp-binop? fp-binop-op fp-binop-lhs fp-binop-rhs fp-unop? fp-unop-operand
                   fp-typeop? fp-typeop-operand fp-typeop-type fp-var? fp-extern?
                   fp-invoke fp-call fp-index fp-typeop)
-         (only-in "navigate.rkt" all-schema-fields resource-type-name?)
-         (only-in "types.rkt" fhir-ancestors primitive-codes registry-memo)
+         (only-in (submod "navigate.rkt" unchecked) all-schema-fields resource-type-name?)
+         (only-in (submod "types.rkt" unchecked) fhir-ancestors primitive-codes registry-memo)
          (only-in fhir/model/registry type-schema-of type-registered? type-registry-generation)
          (only-in fhir/model/schema
                   schema-field-name schema-field-ftype schema-field-choice-base
                   ftype-tag ftype-prim-code ftype-type-name inherited-field-ftype))
 
-(provide (contract-out [analyze (->* (any/c (or/c symbol? #f)) (#:strict? boolean?) void?)]
+(provide (contract-out #:unprotected-submodule unchecked [analyze (->* (any/c (or/c symbol? #f)) (#:strict? boolean?) void?)]
                        [path-head (-> any/c (or/c symbol? #f))]
                        [union-branch (-> any/c any/c)]))
+;; In-package callers require (submod "analyze.rkt" unchecked): the same names without their
+;; contracts (the contracts are for callers outside the package).
 
 ;; strict mode flags direct access to an expanded choice member (Observation.valueQuantity) as a
 ;; semantic error; mode="lenient/polymorphics" allows it.

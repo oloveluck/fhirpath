@@ -13,19 +13,21 @@
 ;;; before it becomes a Coll (bool3->coll).
 
 (require racket/contract racket/list
-         "error.rkt"
-         (only-in "value.rkt" item->system as-decimal fp-quantity fp-quantity? fp-quantity-value
+         (submod "error.rkt" unchecked)
+         (only-in (submod "value.rkt" unchecked) item->system as-decimal fp-quantity fp-quantity? fp-quantity-value
                   fp-quantity-unit fp-quantity-calendar? fp-long fp-long?)
-         (only-in "decimal.rkt" fp-decimal? integer->decimal decimal->exact decimal-add decimal-sub
+         (only-in (submod "decimal.rkt" unchecked) fp-decimal? integer->decimal decimal->exact decimal-add decimal-sub
                   decimal-mul decimal-div decimal-cmp fp-decimal fp-decimal-scale)
-         (only-in "temporal-ops.rkt" value->moment moment? moment-compare moment->string moment-plus
+         (only-in (submod "temporal-ops.rkt" unchecked) value->moment moment? moment-compare moment->string moment-plus
                   moment-add-ms)
-         (only-in "equality.rkt" coll-equal coll-equiv member=? distinct=)
-         (only-in "quantity.rkt" quantity-compare quantity-add quantity-sub make-quantity calendar-ucum))
+         (only-in (submod "equality.rkt" unchecked) coll-equal coll-equiv member=? distinct=)
+         (only-in (submod "quantity.rkt" unchecked) quantity-compare quantity-add quantity-sub make-quantity calendar-ucum))
 
-(provide (contract-out
+(provide (contract-out #:unprotected-submodule unchecked
           [apply-binop (-> symbol? list? list? list?)]
           [apply-unary (-> symbol? list? list?)]))
+;; In-package callers require (submod "operators.rkt" unchecked): the same names without their
+;; contracts (the contracts are for callers outside the package).
 
 ;; ---- dispatch -------------------------------------------------------------------------------
 ;; apply-binop : Symbol Coll Coll -> Coll   the binary operator `op` over evaluated operands

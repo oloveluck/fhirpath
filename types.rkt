@@ -12,12 +12,12 @@
          racket/string
          (only-in fhir/model/registry type-schema-of type-registered? type-registry-generation)
          (only-in fhir/model/schema type-schema-parent)
-         (only-in "value.rkt" item-fhir-type item-system-type system-value?)
+         (only-in (submod "value.rkt" unchecked) item-fhir-type item-system-type system-value?)
          (only-in fhir/model/base primitive-type?)
          (only-in fhir/model/node fhir? fhir-type))
 
 (provide
- (contract-out
+ (contract-out #:unprotected-submodule unchecked
   [item-is?       (-> any/c symbol? boolean?)]          ; item `is` typeSpecifier
   [item-of-type?  (-> any/c symbol? boolean?)]          ; item `as`/`ofType` (strict) typeSpecifier
   [known-type?    (-> symbol? boolean?)]                ; is this typeSpecifier a real FHIR/System type?
@@ -29,6 +29,8 @@
   ;; type registry is what it was (a logical model can be registered again under a name)
   [registry-memo  (-> (-> any/c any/c) (-> any/c any/c))]
   [type-info-of   (-> any/c (values symbol? symbol?))])) ; item -> (values namespace name) for type()
+;; In-package callers require (submod "types.rkt" unchecked): the same names without their
+;; contracts (the contracts are for callers outside the package).
 
 (define framework-parents
   (hash 'DomainResource 'Resource
@@ -60,9 +62,10 @@
   (define table (make-hasheq))
   (define generation -1)
   (lambda (key)
-    (unless (eqv? generation (type-registry-generation))
+    (define now (type-registry-generation))
+    (unless (eqv? generation now)
       (hash-clear! table)
-      (set! generation (type-registry-generation)))
+      (set! generation now))
     (define known (hash-ref table key none))
     (cond [(eq? known none) (define v (f key)) (hash-set! table key v) v]
           [else known])))
@@ -118,7 +121,10 @@
 (define (fhir-type-name? nm) (or (type-registered? nm) (and (memq nm primitive-codes) #t)))
 (define (system-type-name? nm) (and (memq nm system-type-names) #t))
 
-(define (known-type? typesym)
+;; known-type? : Symbol -> Boolean   does the type specifier name a FHIR or System type? Asked by
+;; every `is`/`as`/`ofType`, so once per specifier while the registry is what it was
+(define known-type? (registry-memo (lambda (typesym) (read-known-type? typesym))))
+(define (read-known-type? typesym)
   (define spec (type-spec typesym))
   (case (car spec)
     [(System) (system-type-name? (cdr spec))]
