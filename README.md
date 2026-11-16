@@ -1,8 +1,8 @@
 # fhirpath — FHIRPath
 
-> Part of [fhir](https://github.com/oloveluck/fhir), a FHIR implementation designed to be used by
-> AI agents: one line per problem, at its place, with what would fix it; a guide written for an
-> agent to read; the same language inside the `fhir-mcp` workspace.
+> Part of [fhir](https://github.com/oloveluck/fhir), a toolkit for AI agents on FHIR: an
+> agent reads and writes FHIR's languages, and the JSON is what they compile to. FHIRPath is the
+> expression language the others share; a mistake is one line, at its place, with the nearest name.
 
 [FHIRPath](https://hl7.org/fhirpath/) is FHIR's small language for asking a question of one
 resource: "the patient's official given names", "is this patient an adult". FHIR itself uses it
