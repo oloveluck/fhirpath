@@ -49,6 +49,8 @@
 
 (provide (contract-out #:unprotected-submodule unchecked
           [function-known? (-> symbol? boolean?)]
+          ;; #f, or a box of the references resolve() looked for and did not find (newest first)
+          [current-unresolved-references (parameter/c (or/c #f box?))]
           [apply-function  (-> symbol? list? (listof any/c) any/c procedure? list? list?)]))
 ;; In-package callers require (submod "functions.rkt" unchecked): the same names without their
 ;; contracts (the contracts are for callers outside the package).
@@ -125,9 +127,19 @@
 ;; contained resources, anything else among the entries of a root Bundle
 (define (resolve-one item e)
   (define ref (ref-of item))
-  (cond [(not ref) '()]
-        [(string-prefix? ref "#") (find-contained (substring ref 1) e)]
-        [else (find-in-bundle ref e)]))
+  (define found
+    (cond [(not ref) '()]
+          [(string-prefix? ref "#") (find-contained (substring ref 1) e)]
+          [else (find-in-bundle ref e)]))
+  (define log (current-unresolved-references))
+  (when (and log ref (null? found)) (set-box! log (cons ref (unbox log))))
+  found)
+;; current-unresolved-references : (parameter (or #f (box (listof String))))
+;; resolve() answers nothing for a reference that is not in the input (another resource on a
+;; server, say), which an expression cannot tell from a reference to nothing. A caller that must
+;; know — a validator deciding whether `provider.all(resolve() is Practitioner)` is broken or
+;; cannot be decided — sets a box here, and each reference looked for and not found is put in it.
+(define current-unresolved-references (make-parameter #f))
 ;; ref-of : Item -> String | #f   a Reference's `reference`, or the item itself when it is a string
 (define (ref-of item)
   (if (fhir? item)

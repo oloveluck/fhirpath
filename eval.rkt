@@ -16,14 +16,16 @@
          (only-in (submod "types.rkt" unchecked) item-is? item-of-type? known-type?)
          (only-in (submod "analyze.rkt" unchecked) analyze union-branch)
          (only-in fhir/model/node fhir? fhir-type)
-         (only-in (submod "functions.rkt" unchecked) apply-function)
+         (only-in (submod "functions.rkt" unchecked) apply-function current-unresolved-references)
          (only-in (submod "decimal.rkt" unchecked) parse-decimal integer->decimal)
          (only-in (submod "quantity.rkt" unchecked) make-quantity)
          (only-in (submod "temporal-ops.rkt" unchecked) parse-fp-date parse-fp-datetime parse-fp-time calendar-problem))
 
 (provide (contract-out
           [eval-fhirpath (->* (any/c list?) (#:externals hash? #:strict? boolean?) list?)]
-          [fp-eval       (-> any/c list? env? list?)]))
+          [fp-eval       (-> any/c list? env? list?)]
+          ;; resolve()'s misses, for a caller that must tell "false" from "cannot be decided"
+          [current-unresolved-references (parameter/c (or/c #f box?))]))
 
 (define (eval-fhirpath ast root #:externals [ext (hash)] #:strict? [strict? #t])
   ;; static semantic pass, seeded with the input resource type (when the root is a single node)

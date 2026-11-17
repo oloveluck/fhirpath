@@ -265,3 +265,12 @@ fsh, sql-on-fhir, fhir-validation, fhir-server) get every contract they had.
   behaviour dump (every suite expression strict and lenient, every SearchParameter's static check and
   values, every root constraint on every node, R5 and R4; UCUM) is identical. Floors unchanged (R5
   1044/1044, R4 932/934, UCUM 573/573, SearchParameters 26 refused); tests 454 -> 457.
+
+## What resolve() did not find (2026-11-17)
+`resolve()` answers nothing for a reference whose resource is not in the input (not contained, not
+an entry of a root Bundle), which an expression cannot tell from a reference to nothing:
+`provider.all(resolve() is Practitioner)` is false of a reference to a Practitioner on a server.
+`current-unresolved-references` (functions.rkt, provided by eval.rkt too) is #f, or a box a caller
+sets: each reference `resolve-one` looked for and did not find is put in it. The engine's answers
+are unchanged; fhir-validation reads the box to leave such an invariant undecided. Floors
+unchanged: R5 1044/1044, R4 932/934.
