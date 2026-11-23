@@ -83,6 +83,20 @@
        (define sch (type-schema-of t))
        (if (not sch) acc (loop (type-schema-parent sch) (append acc (type-schema-fields sch))))))))
 
+;; defined-names : Symbol -> (listof Symbol)   a type's element names in the order of its
+;; definition: what every resource or element inherits first (the framework's fields, which the
+;; schemas do not list), then the type's own, an ancestor's before a descendant's
+(define inherited-names '(id meta implicitRules language text contained extension modifierExtension))
+(define defined-names
+  (registry-memo
+   (lambda (type)
+     (define own
+       (let loop ([t type] [acc '()])
+         (define sch (type-schema-of t))
+         (if (not sch) acc (loop (type-schema-parent sch) (append (map schema-field-name (type-schema-fields sch)) acc)))))
+     ;; a type may define an element of an inherited name itself (CodeableConcept.text): once, in its own place
+     (append (filter (lambda (n) (not (memq n own))) inherited-names) own))))
+
 ;; resource-type-name? : Symbol -> Boolean   a registered resource type's name (Capitalized; distinct
 ;; from lowercase element names); asked at every step a node does not hold, so once per name
 ;; while the registry is what it was
@@ -105,11 +119,18 @@
 (define (choice-members-for type name) (hash-ref (choice-members type) name '()))
 
 ;; all immediate child values of an item (nodes -> every present field value; primitives -> its
-;; extensions). Order is unspecified (a hash walk), matching FHIRPath's unordered children().
+;; extensions). FHIRPath leaves the order of children() undefined; here it is the order the
+;; type's definition gives its elements (what HL7's Java engine answers too), then any field the
+;; type does not define — never the order of a hash walk, which could differ from run to run.
 (define (node-children item)
   (cond
     [(fhir? item)
-     (append-map (lambda (v) (listify v)) (hash-values (fhir-fields item)))]
+     (define fields (fhir-fields item))
+     (define defined (defined-names (fhir-type item)))
+     (define (values-of k) (listify (hash-ref fields k)))
+     (append (append-map values-of (filter (lambda (k) (hash-has-key? fields k)) defined))
+             (append-map values-of
+                         (sort (filter (lambda (k) (not (memq k defined))) (hash-keys fields)) symbol<?)))]
     [(primitive-type? item) (element-extension item)]
     [else '()]))
 
@@ -124,6 +145,13 @@
                 (for/list ([f (in-list (all-schema-fields 'Observation))]
                            #:when (eq? (schema-field-choice-base f) 'value))
                   (schema-field-name f)))
+  ;; children() in the definition's order, whatever order the fields were given in
+  (check-equal? (node-children (fhir 'Reference (hasheq 'display "Amy" 'reference "Patient/a" 'id "r1")))
+                '("r1" "Patient/a" "Amy"))
+  (check-equal? (take (defined-names 'Patient) 4) '(id meta implicitRules language))
+  (check-not-false (memq 'birthDate (defined-names 'Patient)))
+  (check-equal? (node-children (fhir 'CodeableConcept (hasheq 'text "t" 'coding (list (fhir 'Coding (hasheq 'code "c"))))))
+                (list (fhir 'Coding (hasheq 'code "c")) "t"))
   (check-true (resource-type-name? 'Patient))
   (check-false (resource-type-name? 'HumanName))
   (check-false (resource-type-name? 'name))

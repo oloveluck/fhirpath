@@ -274,3 +274,38 @@ an entry of a root Bundle), which an expression cannot tell from a reference to 
 sets: each reference `resolve-one` looked for and did not find is put in it. The engine's answers
 are unchanged; fhir-validation reads the box to leave such an invariant undecided. Floors
 unchanged: R5 1044/1044, R4 932/934.
+
+## Held to HL7's Java engine (2026-11-23)
+fhir-examples' value experiment H (its `value-experiment/PROTOCOL.md`; `reference/`): 172,527
+(resource, expression) pairs — every R4 core and US Core search parameter and invariant over US
+Core's 230 examples of 29 resource types, each search expression continued by one of 116 calls of the specification's
+functions and operators, and V-profile's changed copies — evaluated by this engine and by the
+validator's own engine (validator_cli.jar as a library, through a bridge that only calls and
+prints). A fifth of the expressions were the sample whose disagreements were read; the rest only
+counted. Held-out agreement 85.5% -> 89.1%; counting a difference that is the reference's own
+departure from the specification as none, 95.3% -> 99.1%. What was this engine's, each with a
+test that fails without the fix:
+- **`toString()` of a complex value is empty, `convertsToString()` of one false** (functions.rkt
+  `complex-value?`). It raised `cannot convert complex value to String` — 6,240 pairs. The
+  specification lists what converts and gives the rest no answer, as `toInteger()` already did.
+  `item->string` still raises for the callers that need a string (`join`, `&`).
+- **`children()` and `descendants()` answer in the definition's order** (navigate.rkt
+  `node-children`, `defined-names`): what a type inherits (id, meta … extension), then its own
+  elements as its definition lists them, an ancestor's first. It was the order of a hash walk,
+  which can differ between runs; the specification leaves the order undefined, and the
+  definition's is what HL7's engine answers. The first cut listed `CodeableConcept.text` twice
+  (`text` is also a resource's inherited field): the comparison caught it before any commit.
+- **`type().name` of a nested element is its FHIR type** (types.rkt `named-type`):
+  `Location.position.type().name` answered `LocationPosition`, this toolkit's own name for the
+  generated type; it is `BackboneElement`.
+What is the reference's (a user who moves an expression between the two meets these; the manual's
+Limits list them): no `toDate()`, `toTime()` unimplemented, `single()` and `convertsTo…()` of an
+empty input raise or answer false where the specification says empty, a division keeps the
+operands' digits (`1 / 3` is `0.3`), `type().name` of a FHIR primitive is capitalised (`Code`:
+HL7's own suite expects `code`), `convertsToString()` of a complex value is true, and `resolve()`
+raises as its command line runs it. Open, left as they were: comparing two complex values with
+`<` is an error here and nothing there; a UTC dateTime's text keeps its `Z` here and is
+`+00:00` there; `hasExtension()` (no function of the specification; US Core's `item-subject`
+search parameter calls it) exists here and not there. 618 held-out pairs differ under no class
+and are unread, and 60 still raise under the `toString()` rule for a reason not yet read.
+Floors unchanged: R5 1044/1044, R4 932/934, UCUM 573/573, SearchParameters 26 refused.

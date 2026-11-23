@@ -11,7 +11,7 @@
 (require racket/contract
          racket/string
          (only-in fhir/model/registry type-schema-of type-registered? type-registry-generation)
-         (only-in fhir/model/schema type-schema-parent)
+         (only-in fhir/model/schema type-schema-parent type-schema-spec-url)
          (only-in (submod "value.rkt" unchecked) item-fhir-type item-system-type system-value?)
          (only-in fhir/model/base primitive-type?)
          (only-in fhir/model/node fhir? fhir-type))
@@ -147,16 +147,36 @@
 
 ;; type() : (values namespace name). A FHIR-typed item reports FHIR + its type; a pure System
 ;; scalar reports System + its System type.
+;; A nested element (Location.position, Patient.contact) has a type of this toolkit's making
+;; (LocationPosition); in FHIR its type is the one it is built on (BackboneElement), and that is
+;; the name type() answers — it answered the internal name.
 (define (type-info-of item)
   (cond
     [(primitive-type? item) (values 'FHIR (item-fhir-type item))]
-    [(fhir? item) (values 'FHIR (fhir-type item))]
+    [(fhir? item) (values 'FHIR (named-type (fhir-type item)))]
     [else (values 'System (or (item-system-type item) 'Any))]))
+
+;; named-type : Symbol -> Symbol   the FHIR type a registered type is known by: itself, or for
+;; the type of a nested element (its definition is an element of another's: `…#Location.position`)
+;; the type it is built on
+(define named-type
+  (registry-memo
+   (lambda (type)
+     (define sch (type-schema-of type))
+     (define url (and sch (type-schema-spec-url sch)))
+     (if (and (string? url) (regexp-match? #rx"#[^.#]+[.]" url) (type-schema-parent sch))
+         (named-type (type-schema-parent sch))
+         type))))
 
 (module+ test
   (require rackunit
            (only-in fhir/model/node fhir)
            (only-in fhir/r5/schemas))     ; register R5 types for ancestry
+  ;; a nested element's type is known by the type it is built on
+  (check-eq? (named-type 'PatientContact) 'BackboneElement)
+  (check-eq? (named-type 'Patient) 'Patient)
+  (check-eq? (named-type 'HumanName) 'HumanName)
+  (let-values ([(ns nm) (type-info-of (fhir 'PatientContact (hasheq)))]) (check-eq? nm 'BackboneElement))
   ;; FHIR ancestry via the registry
   (check-true  (and (memq 'DomainResource (fhir-ancestors 'Patient)) #t))
   (check-true  (and (memq 'Resource (fhir-ancestors 'Patient)) #t))

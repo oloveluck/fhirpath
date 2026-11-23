@@ -279,7 +279,13 @@
               [else '()])))
 
 ;; conversions ---------------------------------------------------------------------------------
-(def! 'toString (lambda (s a e ev) (if (null? s) '() (list (item->string (sing s))))))
+;; toString() of a value that has no string form (a complex value: a CodeableConcept, a Reference)
+;; is empty, as toInteger() of one is — the specification lists what converts and makes the rest
+;; no answer, never an error (it raised "cannot convert complex value to String")
+(define (complex-value? x) (fhir? (item->system x)))
+(def! 'toString (lambda (s a e ev) (cond [(null? s) '()]
+                                         [(complex-value? (sing s)) '()]
+                                         [else (list (item->string (sing s)))])))
 (def! 'toInteger (lambda (s a e ev) (conv s ->integer)))
 (def! 'toDecimal (lambda (s a e ev) (conv s ->decimal)))
 (def! 'toBoolean (lambda (s a e ev) (conv s ->boolean)))
@@ -290,7 +296,7 @@
 (def! 'convertsToLong (lambda (s a e ev) (converts s ->long)))
 (def! 'convertsToDecimal (lambda (s a e ev) (converts s ->decimal)))
 (def! 'convertsToBoolean (lambda (s a e ev) (converts s ->boolean)))
-(def! 'convertsToString  (lambda (s a e ev) (converts s (lambda (x) (item->string x)))))
+(def! 'convertsToString  (lambda (s a e ev) (converts s (lambda (x) (if (complex-value? x) 'no (item->string x))))))
 (def! 'convertsToQuantity #:max 1 (lambda (s a e ev) (converts s ->quantity)))
 (def! 'toDate     (lambda (s a e ev) (conv s ->date)))
 (def! 'toDateTime (lambda (s a e ev) (conv s ->datetime)))
@@ -852,7 +858,7 @@
 
 ;; ---- living examples ------------------------------------------------------------------------
 (module+ test
-  (require rackunit
+  (require rackunit (only-in fhir/model/node fhir)
            (only-in "environment.rkt" make-env)
            (only-in "parser/ast.rkt" fp-lit fp-lit-value fp-invoke)
            (only-in "decimal.rkt" parse-decimal decimal->string)
@@ -915,6 +921,11 @@
   (check-equal? (decimal->string (->decimal "-2.50")) "-2.50")
   (check-equal? (call 'convertsToDecimal '("1e3")) '(#f))
   (check-equal? (call 'toString '(#t)) '("true"))
+  ;; a complex value has no string form: no answer, and convertsToString() says so (both raised)
+  (let ([cc (fhir 'CodeableConcept (hasheq 'text "x"))])
+    (check-equal? (call 'toString (list cc)) '())
+    (check-equal? (call 'convertsToString (list cc)) '(#f))
+    (check-equal? (call 'convertsToString '("a")) '(#t)))
 
   ;; strings
   (check-equal? (call 'upper '("ab")) '("AB"))
