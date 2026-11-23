@@ -306,6 +306,21 @@ HL7's own suite expects `code`), `convertsToString()` of a complex value is true
 raises as its command line runs it. Open, left as they were: comparing two complex values with
 `<` is an error here and nothing there; a UTC dateTime's text keeps its `Z` here and is
 `+00:00` there; `hasExtension()` (no function of the specification; US Core's `item-subject`
-search parameter calls it) exists here and not there. 618 held-out pairs differ under no class
-and are unread, and 60 still raise under the `toString()` rule for a reason not yet read.
+search parameter calls it) exists here and not there. 618 held-out pairs differed under no class
+and 60 still raised under the `toString()` rule; a second pass opened them (below).
 Floors unchanged: R5 1044/1044, R4 932/934, UCUM 573/573, SearchParameters 26 refused.
+**Second pass** (the same day; stated in the protocol before any held-out pair was read). One
+more defect of this engine: **`hasValue()` of several items answered for the first**
+(functions.rkt: FHIR's definition is about "a single value"; of several it is false). The
+reference's: `toInteger()`, `toDecimal()`, `toBoolean()`, `toQuantity()`, `toDateTime()` of a
+value READ FROM THE RESOURCE answer nothing and their `convertsTo…()` false (it converts
+literals and computed values only: `Patient.active.toBoolean()` is empty there); a path rooted
+at another type than the resource's answers nothing where HL7's suite requires an error. Open:
+`Resource.id` is a System.String here, as its definition says (`hasValue()` false, `is string`
+false, `type().name` `String`), and an `id` there — making it one would be the foundation's
+framework fields (id as a typed primitive, as language and implicitRules became) and the towers
+regenerated; `hasValue()` of a computed Boolean is false here (no FHIR primitive) and true
+there; FHIR's dom-3 calls `as()` on several items, an error here as HL7's suite requires. Then
+a fresh set nobody read — the same rules over IPS's and mCODE's examples, 142,488 pairs: the
+same answer on 89.7%, 99.5% with the reference's departures aside, 66 pairs (0.05%) under no
+class, none under a class that is this engine's.

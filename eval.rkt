@@ -131,6 +131,10 @@
                   'name (list (hasheq 'family "Chalmers" 'given (list "Peter" "James"))))))
   (define practitioner
     (node (hasheq 'resourceType "Practitioner" 'id "d1" 'name (list (hasheq 'given (list "Adam"))))))
+  ;; hasValue() is about a single item: of several it is false (it answered for the first)
+  (check-equal? (map item->system (eval-fhirpath (parse-fhirpath "Patient.name.given.hasValue()") (list patient))) '(#f))
+  (check-equal? (map item->system (eval-fhirpath (parse-fhirpath "Patient.name.given.first().hasValue()") (list patient))) '(#t))
+  (check-equal? (map item->system (eval-fhirpath (parse-fhirpath "Patient.gender.hasValue()") (list patient))) '(#t))
   ;; run : string node -> (listof system value) | the error's message
   (define (run s root)
     (with-handlers ([exn:fp? exn-message])

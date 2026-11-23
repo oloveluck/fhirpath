@@ -454,11 +454,15 @@ two, these are the differences you can meet. There, @fp{toDate()} and @fp{toTime
 exist; @fp{single()} of nothing is an error and @fp{convertsToInteger()} (and its siblings) of
 nothing is @tt{false}, where the specification says empty; @fp{1 / 3} is @tt{0.3}, because a
 division keeps the digits of its operands; @fp{Patient.gender.type().name} is @tt{Code}, where
-HL7's own suite expects @tt{code}; and @fp{convertsToString()} of a complex value is @tt{true}.
+HL7's own suite expects @tt{code}; @fp{convertsToString()} of a complex value is @tt{true}; and
+@fp{toInteger()}, @fp{toDecimal()}, @fp{toBoolean()} and @fp{toQuantity()} convert a literal but
+answer nothing for a value read from the resource (@fp{Patient.active.toBoolean()} is empty).
 Here, comparing two complex values with @fp{<} is an error (there: nothing), a time in UTC keeps
 the @tt{Z} it was written with when it becomes text (there: @tt{+00:00}), and @fp{hasExtension()}
 exists because a published US Core search parameter calls it, though the specification does not
-define it.}
+define it. A resource's @tt{id} is a plain String here, as FHIR defines it, so
+@fp{Patient.id.hasValue()} is @tt{false} and @fp{Patient.id.type().name} is @tt{String}; there it
+is an @tt{id} and both differ.}
 @item{@bold{Two cases of HL7's R4 suite fail on purpose.} Adding a fraction of a second to a time
 (@fp{@"@"T… + 0.1 's'}): R4 drops the fraction and R5 keeps it, and the engine follows R5. And
 @fp{(-0.0034).lowBoundary(1)} is expected to be @tt{-0.0}; decimals here have no negative zero.}]
@@ -501,10 +505,11 @@ Against the suites HL7 and UCUM publish, kept in the repository as published:
 described under Limits.}
 @item{UCUM's functional tests (validity, display names, conversion, arithmetic on units): all 573.}
 @item{Beside HL7's Java engine, on 172,527 pairs of a published expression (or one changed in a
-small way) and a published resource. The two give the same answer on 89 in 100 of the pairs that
-were kept apart and never read; on 99 in 100 when the differences that are the Java engine's own
-departures from the specification are set aside. Reading a sample of the differences found three
-mistakes of this engine, now fixed. The comparison lives in the @tt{fhir-examples} repository.}
+small way) and a published resource, and then on 142,488 more from two other guides that nobody
+read. On those the two give the same answer on 90 in 100 pairs; on 99.5 in 100 when the
+differences that are the Java engine's own departures from the specification are set aside.
+Reading the differences found four mistakes of this engine, now fixed. The comparison lives in
+the @tt{fhir-examples} repository.}
 @item{Every expression in the repository's @tt{guide.md} is parsed and its worked examples are
 replayed through the command line, so what it shows is what you get.}
 @item{Expressions are read by a hand-written parser, for speed. The parser generated from the

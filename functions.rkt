@@ -379,7 +379,9 @@
 (def! 'type   (lambda (s a e ev) (map (lambda (x) (let-values ([(ns nm) (type-info-of x)])
                                                     (make-typeinfo ns nm))) s)))
 (def! 'trace  #:lazy? #t #:min 1 #:max 2 (lambda (s a e ev) s))  ; no-op passthrough
-(def! 'hasValue (lambda (s a e ev) (bool-coll (and (pair? s) (primitive-type? (car s)) (not (value-less? (car s)))))))
+;; hasValue(): "the input collection contains a single value which is a FHIR primitive, and it
+;; has a primitive value". Of several items it is false (it answered for the first of them).
+(def! 'hasValue (lambda (s a e ev) (bool-coll (and (pair? s) (null? (cdr s)) (primitive-type? (car s)) (not (value-less? (car s)))))))
 (def! 'getValue (lambda (s a e ev) (if (and (pair? s) (primitive-type? (car s))) (list (item->system (car s))) s)))
 (def! 'extension #:min 1 #:max 1 (lambda (s a e ev)
       (define url (str1 (car a)))
