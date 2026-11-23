@@ -37,7 +37,7 @@
                   moment-second moment-tzmin)
          (only-in (submod "quantity.rkt" unchecked) make-quantity quantity->string calendar-unit? quantity-compare)
          (only-in (submod "environment.rkt" unchecked) env-with-item env-with-this env-with-total env-define-var
-                  env-clone-vars env-var-bound? env-this env-root)
+                  env-clone-vars env-var-bound? env-this env-root env-lookup-external)
          (only-in "terminology.rkt" tx-service? tx-service-expand tx-service-validate tx-service-translate)
          (only-in (submod "regex.rkt" unchecked) regex-matches? regex-replace)
          (only-in (submod "operators.rkt" unchecked) apply-binop)
@@ -84,8 +84,7 @@
 ;; not-implemented : (hash Symbol -> String)   functions FHIR or the current build defines that this
 ;; engine does not, and what each would need; using one says so (it was "unknown function")
 (define not-implemented
-  (hasheq 'memberOf "FHIR's memberOf() needs a terminology service (%terminologies.validateVS() is one way)"
-          'subsumes "FHIR's subsumes() needs a terminology service"
+  (hasheq 'subsumes "FHIR's subsumes() needs a terminology service"
           'subsumedBy "FHIR's subsumedBy() needs a terminology service"
           'htmlChecks "FHIR's htmlChecks() checks narrative XHTML, which this engine does not read"
           'elementDefinition "FHIR's elementDefinition() needs the StructureDefinition an element was validated against"
@@ -450,6 +449,54 @@
         ((tx-service-translate (tx-subject s 'translate)) (str1 (car a))
                                                           (or code (and first-coding (hash-ref first-coding 'code #f)))
                                                           system)))
+;; memberOf(valueset) — FHIR's function: is the one code, Coding or CodeableConcept in the value
+;; set? "If the valueset cannot be resolved as a uri to a value set, or the input is empty or has
+;; more than one value, the return value is empty." Answered by the terminology service the caller
+;; gave as %terminologies (there is no other way to see a value set from here); without one it is
+;; an error that says so. Where the service cannot say — the value set is not there, or rests on
+;; a code system whose content is not — the answer is empty, not false.
+(def! 'memberOf #:min 1 #:max 1
+      (lambda (s a e ev)
+        (define tx (let ([x (with-handlers ([exn:fail? (lambda (_) #f)]) (env-lookup-external e "terminologies"))])
+                     (and (pair? x) (tx-service? (car x)) (car x))))
+        (unless tx
+          (fp-error 'semantic "memberOf() is not implemented here: FHIR's memberOf() needs a terminology service (give one as %terminologies)"))
+        (define url (str1 (car a)))
+        (cond
+          [(or (null? s) (pair? (cdr s)) (not url)) '()]
+          [else
+           (define-values (code coding cc) (tx-coded s))
+           ;; membership is of the code: a display that is not the code system's own makes no difference
+           (define (bare c) (hash-remove c 'display))
+           (define result
+             (parameter-named (with-handlers ([exn:fail? (lambda (_) #f)])
+                                ((tx-service-validate tx) url code #f
+                                                          #:coding (and coding (bare coding))
+                                                          #:codeable-concept (and cc (hash-set cc 'coding (map bare (hash-ref cc 'coding '()))))))
+                              "result"))
+           (cond [(not result) '()]
+                 [(eq? (hash-ref result 'valueBoolean #f) #t) (list #t)]
+                 [(value-set-decidable? tx url) (list #f)]
+                 [else '()])])))
+;; parameter-named : Coll|any string -> jsexpr|#f   the named parameter of a Parameters answer
+(define (parameter-named answer name)
+  (define node (cond [(and (pair? answer) (fhir? (car answer))) (car answer)] [(fhir? answer) answer] [else #f]))
+  (and node
+       (for/first ([p (in-list (hash-ref (node->jsexpr node) 'parameter '()))] #:when (equal? (hash-ref p 'name #f) name)) p)))
+;; value-set-decidable? : tx-service string -> boolean   can the service say a code is NOT in the
+;; value set: it expands to something, and the expansion is not marked as open (a value set nothing
+;; defines expands to nothing; one resting on a code system that is not here is "unclosed")
+(define (value-set-decidable? tx url)
+  (define expansion
+    (with-handlers ([exn:fail? (lambda (_) #f)])
+      (let ([x ((tx-service-expand tx) url #f (hash))])
+        (cond [(and (pair? x) (fhir? (car x))) (hash-ref (node->jsexpr (car x)) 'expansion #f)]
+              [(fhir? x) (hash-ref (node->jsexpr x) 'expansion #f)]
+              [else #f]))))
+  (and (hash? expansion)
+       (pair? (hash-ref expansion 'contains '()))
+       (not (for/or ([x (in-list (hash-ref expansion 'extension '()))])
+              (equal? (hash-ref x 'url #f) "http://hl7.org/fhir/StructureDefinition/valueset-unclosed")))))
 (def! 'conformsTo #:min 1 #:max 1
       (lambda (s a e ev)
         (define url (str1 (car a)))

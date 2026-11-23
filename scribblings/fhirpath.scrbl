@@ -424,14 +424,16 @@ own @tt{contained} resources only. It does not fetch another resource.}
 names, not that it meets a profile's rules. Use the validator for that.}
 @item{@bold{Tracing.} @fp{trace()} passes its input through and logs nothing.}
 @item{@bold{Terminology.} @fp{%terminologies} has @fp{expand()}, @fp{validateVS()} and
-@fp{translate()}; it does not have @fp{lookup()}, @fp{validateCS()}, @fp{subsumes()} or
-@fp{memberOf()}.}
+@fp{translate()}; it does not have @fp{lookup()}, @fp{validateCS()} or @fp{subsumes()}. FHIR's
+@fp{memberOf(valueset)}, called on one code, Coding or CodeableConcept, is answered by that same
+service when the caller gives one as @fp{%terminologies}: true or false, and nothing when the
+value set, or a code system it rests on, is not there. Without a service it is an error.}
 @item{@bold{Newer functions.} Of FHIRPath 3.0's additions, @tt{duration}, @tt{difference} and
 @tt{pathname} are not implemented, nor are the sort keywords @tt{asc} and @tt{desc} (write
-@fp{sort(-$this)} for descending); FHIR's @tt{memberOf}, @tt{subsumes}, @tt{subsumedBy},
+@fp{sort(-$this)} for descending); FHIR's @tt{subsumes}, @tt{subsumedBy},
 @tt{htmlChecks}, @tt{elementDefinition}, @tt{slice}, @tt{checkModifiers} and @tt{weight} are not
-either. Using one is an error that names what it would need: @tt{memberOf() is not implemented
-here: FHIR's memberOf() needs a terminology service …}. The others are: @tt{lastIndexOf},
+either. Using one is an error that names what it would need: @tt{subsumes() is not implemented
+here: FHIR's subsumes() needs a terminology service}. The others are: @tt{lastIndexOf},
 @tt{coalesce}, @tt{sum}, @tt{min}, @tt{max}, @tt{avg}, @tt{toLong}, @tt{yearOf} …
 @tt{millisecondOf}, @tt{timezoneOffsetOf}, @tt{dateOf}, @tt{timeOf}, @tt{repeatAll}, and the
 @tt{i}/@tt{m} flags of @tt{matches}, @tt{matchesFull} and @tt{replaceMatches}.}

@@ -115,9 +115,12 @@ file. Resources are read with the workspace's FHIR version (R4 for 4.0.1).
   precision (`@2024 = @2024-01-01` is `{}`). Use `exists()`, `empty()` or `~` when that matters.
 - `` `mg` is no calendar duration ``: a bare word after a number is a calendar duration (`3 days`);
   a UCUM unit is quoted, `5 'mg'`.
-- `memberOf() is not implemented here`: FHIR's `memberOf()`, `subsumes()`, `htmlChecks()`,
+- `subsumes() is not implemented here`: FHIR's `subsumes()`, `htmlChecks()`,
   `elementDefinition()`, `slice()`, `checkModifiers()`, `weight()` and the current build's
   `duration()`, `difference()`, `pathname()` are not; the message says what each would need.
+  FHIR's `memberOf(valueset)` is answered by the terminology service given as `%terminologies`
+  (true, false, or empty when the value set or a code system it rests on is not there); without
+  one it is the same kind of error.
   Beyond N1 these are implemented: `coalesce()`, `lastIndexOf()`, `sum()`, `min()`, `max()`,
   `avg()`, `toLong()`, `yearOf()` … `millisecondOf()`, `timezoneOffsetOf()`, `dateOf()`, `timeOf()`,
   `repeatAll()`, `matches(re, flags)`.

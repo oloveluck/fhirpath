@@ -324,3 +324,17 @@ there; FHIR's dom-3 calls `as()` on several items, an error here as HL7's suite 
 a fresh set nobody read — the same rules over IPS's and mCODE's examples, 142,488 pairs: the
 same answer on 89.7%, 99.5% with the reference's departures aside, 66 pairs (0.05%) under no
 class, none under a class that is this engine's.
+
+## memberOf(), answered by the terminology service (2026-11-23)
+Found by fhir-examples' value experiment H (part 2, fourth pass): matchbox's `memberof.map` tests
+`maritalStatus.memberOf(…)` in a `where`, and this engine said "not implemented", which a map's
+`where` reads as false. FHIR's `memberOf(valueset)` is now a function (functions.rkt): of ONE
+code, string, Coding or CodeableConcept it asks the `tx-service` the caller gave as
+`%terminologies` (`validate`, the coding's display left out: membership is of the code); the
+answer is true, false, or EMPTY — when the input is empty or several, and when the service
+cannot say (`value-set-decidable?`: the value set expands to nothing, as one nothing defines
+does, or its expansion is marked `valueset-unclosed`). Without a service it is the error it
+was, saying to give one. `tests/memberof-test.rkt` loads fhir-tx by name (it depends on this
+package) and stops with a note when it is absent. fml gives the service to an expression that
+calls `memberOf()` or names `%terminologies`. `subsumes()`/`subsumedBy()` are still not
+implemented. Floors unchanged: R5 1044/1044, R4 932/934; tests 468 -> 479.
