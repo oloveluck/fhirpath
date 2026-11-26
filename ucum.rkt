@@ -8,11 +8,14 @@
 ;;; (`.`/`/`, integer exponents, `[bracketed]` atoms, `{annotations}`). Special (function) units
 ;;; (Cel, [degF], pH, …) are reported as non-canonicalizable (#f).
 
-(require racket/contract racket/list racket/string racket/runtime-path
-         (only-in fhir/suggest did-you-mean)
-         (only-in xml read-xml document-element element? element-name element-content
-                  element-attributes attribute-name attribute-value pcdata? pcdata-string
-                  entity? entity-text))
+(require racket/contract racket/list racket/string racket/runtime-path racket/lazy-require
+         (only-in fhir/suggest did-you-mean))
+;; The XML library is loaded when the essence is first read (the first unit to resolve), not when
+;; this module is: every program that evaluates FHIRPath loads this module, and loading `xml` was
+;; 60 ms of its start whether or not a unit was ever met.
+(lazy-require [xml (read-xml document-element element? element-name element-content
+                             element-attributes attribute-name attribute-value pcdata? pcdata-string
+                             entity? entity-text)])
 
 (provide
  (contract-out #:unprotected-submodule unchecked

@@ -14,10 +14,14 @@
                   token-struct-line token-struct-column token-struct-span)
          (only-in fhir/diagnostic raise-diagnostic exn->diagnostic exn:fail:diagnostic? tokens->last-position error-position
                   diagnostic loc)
-         (prefix-in g: "grammar.rkt")
+         racket/lazy-require
          "lexer.rkt"
          "ast.rkt"
          "descent.rkt")
+
+;; brag's parser of the grammar reads what descent leaves (a text with a mistake in it, the one
+;; form the grammar reads two ways): it is loaded when a text first needs it, not with the engine
+(lazy-require ["grammar.rkt" ([parse-to-datum g:parse-to-datum])])
 
 (provide
  (contract-out

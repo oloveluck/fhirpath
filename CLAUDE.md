@@ -338,3 +338,17 @@ was, saying to give one. `tests/memberof-test.rkt` loads fhir-tx by name (it dep
 package) and stops with a note when it is absent. fml gives the service to an expression that
 calls `memberOf()` or names `%terminologies`. `subsumes()`/`subsumedBy()` are still not
 implemented. Floors unchanged: R5 1044/1044, R4 932/934; tests 468 -> 479.
+
+## One field asked of a node; what loads at start (2026-11-26)
+From the Python client's second pass (the main repo's CLAUDE.md, "The Python client, second
+pass"). Behaviour is unchanged: R5 1044/1044, R4 932/934, UCUM 573/573; tests 479.
+- **A step asks the node for one field** (navigate.rkt `field-values`: `fhir-ref` with the
+  foundation's `no-field`). A lenient node now reads a field at a time, so a path that walks two
+  of a resource's elements parses those two; asking for the whole table (`fhir-fields`) read
+  them all.
+- **`xml` is loaded when the unit table is first read** (ucum.rkt: `lazy-require`; the essence
+  file is XML), and **brag's parser of the grammar when a text first needs it** (parser/parse.rkt:
+  `g:parse-to-datum` through `lazy-require` — descent reads every text without a mistake in it,
+  so a process that only evaluates correct expressions never loads brag's tables: about 45 ms
+  of its first answer). `lazy-require` names its module as a runtime path, so a standalone build
+  still carries both.
