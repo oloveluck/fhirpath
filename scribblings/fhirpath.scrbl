@@ -146,7 +146,7 @@ systolic pressure (code 8480-6) and the diastolic (8462-4):
     "valueQuantity": {"value": 91, "unit": "mm[Hg]", "system": "http://unitsofmeasure.org", "code": "mm[Hg]"}}]}
 }|
 
-The full language is described at @hyperlink["http://hl7.org/fhirpath/N1"]{hl7.org/fhirpath}, and
+The full language (FHIRPath 3.0.0) is described at @hyperlink["http://hl7.org/fhirpath/"]{hl7.org/fhirpath}, and
 what FHIR adds to it at @hyperlink["https://hl7.org/fhir/fhirpath.html"]{hl7.org/fhir/fhirpath.html}.
 The repository's @tt{guide.md} has a cheat sheet, each line of it checked by the tests.
 
