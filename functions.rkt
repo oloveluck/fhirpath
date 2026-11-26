@@ -38,7 +38,8 @@
          (only-in (submod "quantity.rkt" unchecked) make-quantity quantity->string calendar-unit? quantity-compare)
          (only-in (submod "environment.rkt" unchecked) env-with-item env-with-this env-with-total env-define-var
                   env-clone-vars env-var-bound? env-this env-root env-lookup-external)
-         (only-in "terminology.rkt" tx-service? tx-service-expand tx-service-validate tx-service-translate)
+         (only-in "terminology.rkt" tx-service? tx-service-expand tx-service-validate tx-service-translate
+                  tx-service-subsumes)
          (only-in (submod "regex.rkt" unchecked) regex-matches? regex-replace)
          (only-in (submod "operators.rkt" unchecked) apply-binop)
          (only-in "parser/ast.rkt" fp-invoke? fp-invoke-name fp-invoke-target
@@ -84,9 +85,7 @@
 ;; not-implemented : (hash Symbol -> String)   functions FHIR or the current build defines that this
 ;; engine does not, and what each would need; using one says so (it was "unknown function")
 (define not-implemented
-  (hasheq 'subsumes "FHIR's subsumes() needs a terminology service"
-          'subsumedBy "FHIR's subsumedBy() needs a terminology service"
-          'htmlChecks "FHIR's htmlChecks() checks narrative XHTML, which this engine does not read"
+  (hasheq 'htmlChecks "FHIR's htmlChecks() checks narrative XHTML, which this engine does not read"
           'elementDefinition "FHIR's elementDefinition() needs the StructureDefinition an element was validated against"
           'slice "FHIR's slice() needs the profile the resource was validated against"
           'checkModifiers "FHIR's checkModifiers() needs the profiles in context"
@@ -478,6 +477,47 @@
                  [(eq? (hash-ref result 'valueBoolean #f) #t) (list #t)]
                  [(value-set-decidable? tx url) (list #f)]
                  [else '()])])))
+;; subsumes(code) / subsumedBy(code) — FHIR's functions over a Coding or CodeableConcept and the
+;; terminology service given as %terminologies: true when a coding of the input is equivalent to,
+;; or subsumes (is subsumed by), a coding of the argument in the same code system. "If either the
+;; input or the argument are empty, the result is empty"; codings of different systems have no
+;; well-defined relationship, an error; a pair the service cannot decide (a code it does not know)
+;; leaves the answer empty unless another pair says true.
+(define (codings-of coll)
+  (for*/list ([it (in-list coll)]
+              #:when (fhir? it)
+              [c (in-list (case (fhir-type it)
+                            [(Coding) (list (node->jsexpr it))]
+                            [(CodeableConcept) (hash-ref (node->jsexpr it) 'coding '())]
+                            [else '()]))]
+              #:when (and (string? (hash-ref c 'system #f)) (string? (hash-ref c 'code #f))))
+    c))
+(define (subsumption name wanted)
+  (lambda (s a e ev)
+    (define tx (let ([x (with-handlers ([exn:fail? (lambda (_) #f)]) (env-lookup-external e "terminologies"))])
+                 (and (pair? x) (tx-service? (car x)) (tx-service-subsumes (car x)) (car x))))
+    (unless tx
+      (fp-error 'semantic (format "~a() is not implemented here: FHIR's ~a() needs a terminology service that answers subsumption (give one as %terminologies)" name name)))
+    (define sources (codings-of s))
+    (define targets (codings-of (car a)))
+    (cond
+      [(or (null? sources) (null? targets)) '()]
+      [else
+       (define pairs (for*/list ([x (in-list sources)] [y (in-list targets)]
+                                 #:when (equal? (hash-ref x 'system) (hash-ref y 'system)))
+                       (cons x y)))
+       (when (null? pairs)
+         (fp-error 'execution (format "~a(): the codings are of different code systems, between which subsumption is not defined" name)))
+       (define outcomes
+         (for/list ([p (in-list pairs)])
+           ((tx-service-subsumes tx) (hash-ref (car p) 'system) (hash-ref (car p) 'code) (hash-ref (cdr p) 'code)
+                                     (hash-ref (car p) 'version #f))))
+       (cond [(for/or ([o (in-list outcomes)]) (member o wanted)) (list #t)]
+             [(memq #f outcomes) '()]
+             [else (list #f)])])))
+(def! 'subsumes #:min 1 #:max 1 (subsumption 'subsumes '("equivalent" "subsumes")))
+(def! 'subsumedBy #:min 1 #:max 1 (subsumption 'subsumedBy '("equivalent" "subsumed-by")))
+
 ;; parameter-named : Coll|any string -> jsexpr|#f   the named parameter of a Parameters answer
 (define (parameter-named answer name)
   (define node (cond [(and (pair? answer) (fhir? (car answer))) (car answer)] [(fhir? answer) answer] [else #f]))

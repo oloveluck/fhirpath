@@ -427,13 +427,17 @@ names, not that it meets a profile's rules. Use the validator for that.}
 @fp{translate()}; it does not have @fp{lookup()}, @fp{validateCS()} or @fp{subsumes()}. FHIR's
 @fp{memberOf(valueset)}, called on one code, Coding or CodeableConcept, is answered by that same
 service when the caller gives one as @fp{%terminologies}: true or false, and nothing when the
-value set, or a code system it rests on, is not there. Without a service it is an error.}
+value set, or a code system it rests on, is not there. FHIR's @fp{subsumes(code)} and
+@fp{subsumedBy(code)} are answered by it too: true when a coding of the input is equivalent to, or
+broader (narrower) than, a coding of the argument in the same code system; nothing when either side
+is empty or the service does not know a code; an error between different code systems. Without a
+service each is an error.}
 @item{@bold{Newer functions.} Of FHIRPath 3.0's additions, @tt{duration}, @tt{difference} and
 @tt{pathname} are not implemented, nor are the sort keywords @tt{asc} and @tt{desc} (write
-@fp{sort(-$this)} for descending); FHIR's @tt{subsumes}, @tt{subsumedBy},
+@fp{sort(-$this)} for descending); FHIR's
 @tt{htmlChecks}, @tt{elementDefinition}, @tt{slice}, @tt{checkModifiers} and @tt{weight} are not
-either. Using one is an error that names what it would need: @tt{subsumes() is not implemented
-here: FHIR's subsumes() needs a terminology service}. The others are: @tt{lastIndexOf},
+either. Using one is an error that names what it would need: @tt{slice() is not implemented
+here: FHIR's slice() needs the profile the resource was validated against}. The others are: @tt{lastIndexOf},
 @tt{coalesce}, @tt{sum}, @tt{min}, @tt{max}, @tt{avg}, @tt{toLong}, @tt{yearOf} …
 @tt{millisecondOf}, @tt{timezoneOffsetOf}, @tt{dateOf}, @tt{timeOf}, @tt{repeatAll}, and the
 @tt{i}/@tt{m} flags of @tt{matches}, @tt{matchesFull} and @tt{replaceMatches}.}
@@ -642,12 +646,21 @@ Resolves @tt{%name}: a user variable, then a caller external, then the well-know
 @subsubsection[#:style 'unnumbered]{@tt{fhirpath/terminology}}
 @defmodule[fhirpath/terminology]
 
-@defstruct*[tx-service ([expand procedure?] [validate procedure?] [translate procedure?])]{
-The @tt{%terminologies} handle. Each closure returns a collection of typed nodes:
+@deftogether[(
+@defproc[(tx-service [expand procedure?] [validate procedure?] [translate procedure?]
+                     [subsumes (or/c procedure? #f) #f]) tx-service?]
+@defproc[(tx-service? [v any/c]) boolean?]
+@defproc[(tx-service-expand [tx tx-service?]) procedure?]
+@defproc[(tx-service-validate [tx tx-service?]) procedure?]
+@defproc[(tx-service-translate [tx tx-service?]) procedure?]
+@defproc[(tx-service-subsumes [tx tx-service?]) (or/c procedure? #f)])]{
+The @tt{%terminologies} handle. The first three closures return a collection of typed nodes:
 @racket[expand] is @tt{url [version] [params] -> (listof ValueSet)}, @racket[validate] is
 @tt{url code [system] -> (listof Parameters)}, @racket[translate] is
-@tt{url code [system] -> (listof Parameters)}. The @tt{fhir-tx} package builds one over FHIR
-packages.}
+@tt{url code [system] -> (listof Parameters)}. @racket[subsumes] is
+@tt{system code-a code-b [version] -> outcome}: @racket["equivalent"], @racket["subsumes"],
+@racket["subsumed-by"], @racket["not-subsumed"], or @racket[#f] when it cannot say; a handle
+without it has no @fp{subsumes()}. The @tt{fhir-tx} package builds one over FHIR packages.}
 
 @subsection[#:tag "values"]{Values}
 @defmodule[fhirpath/value]

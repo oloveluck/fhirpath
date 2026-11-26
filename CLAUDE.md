@@ -336,8 +336,7 @@ cannot say (`value-set-decidable?`: the value set expands to nothing, as one not
 does, or its expansion is marked `valueset-unclosed`). Without a service it is the error it
 was, saying to give one. `tests/memberof-test.rkt` loads fhir-tx by name (it depends on this
 package) and stops with a note when it is absent. fml gives the service to an expression that
-calls `memberOf()` or names `%terminologies`. `subsumes()`/`subsumedBy()` are still not
-implemented. Floors unchanged: R5 1044/1044, R4 932/934; tests 468 -> 479.
+calls `memberOf()` or names `%terminologies`. `subsumes()`/`subsumedBy()` came after (below). Floors unchanged: R5 1044/1044, R4 932/934; tests 468 -> 479.
 
 ## One field asked of a node; what loads at start (2026-11-26)
 From the Python client's second pass (the main repo's CLAUDE.md, "The Python client, second
@@ -352,3 +351,17 @@ pass"). Behaviour is unchanged: R5 1044/1044, R4 932/934, UCUM 573/573; tests 47
   so a process that only evaluates correct expressions never loads brag's tables: about 45 ms
   of its first answer). `lazy-require` names its module as a runtime path, so a standalone build
   still carries both.
+
+## subsumes() and subsumedBy() (2026-11-26)
+From the terminology parity pass (the main repo's CLAUDE.md, "Terminology held to HL7's suite").
+FHIR's `subsumes(code)`/`subsumedBy(code)` are functions (functions.rkt `subsumption`): over the
+Codings of a Coding or CodeableConcept input and argument, pairs of one code system are asked of
+the `%terminologies` service's new `subsumes` closure (`system a b [version] -> outcome | #f`);
+true when a pair is `equivalent` or `subsumes` (`subsumed-by`), empty when either side is empty or
+a pair cannot be decided and none says true, false otherwise; codings of different systems only
+are an execution error ("subsumption is not defined"), as FHIR's definition says. `tx-service`
+gained that fourth field as an OPTIONAL constructor argument (terminology.rkt: the struct is
+`tx-service*`, `tx-service` a procedure of three or four arguments), so a three-closure handle
+still builds and answers `subsumes()` with the same kind of error as no service.
+`tests/subsumes-test.rkt` loads fhir-tx by name over a small hierarchy. Floors unchanged: R5
+1044/1044, R4 932/934.

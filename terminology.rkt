@@ -13,7 +13,19 @@
 ;;;   expand   : url                 -> (listof fhir)   ; a ValueSet with .expansion.contains
 ;;;   validate : url code [system]   -> (listof fhir)   ; a Parameters ($validate-code result)
 ;;;   translate: url code [system]   -> (listof fhir)   ; a Parameters ($translate result)
+;;;   subsumes : system a b [version] -> outcome | #f    ; "equivalent" "subsumes" "subsumed-by"
+;;;                                                      ;  "not-subsumed", #f when it cannot say
+;;; A service built with three closures has no subsumes (subsumes() then says so).
 
-(provide (struct-out tx-service))
+(provide tx-service tx-service? tx-service-expand tx-service-validate tx-service-translate
+         tx-service-subsumes)
 
-(struct tx-service (expand validate translate) #:transparent)
+(struct tx-service* (expand validate translate subsumes) #:transparent)
+;; tx-service : expand validate translate [subsumes] -> tx-service
+(define (tx-service expand validate translate [subsumes #f])
+  (tx-service* expand validate translate subsumes))
+(define tx-service? tx-service*?)
+(define tx-service-expand tx-service*-expand)
+(define tx-service-validate tx-service*-validate)
+(define tx-service-translate tx-service*-translate)
+(define tx-service-subsumes tx-service*-subsumes)
