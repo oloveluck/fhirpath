@@ -24,6 +24,7 @@
   [navigate       (-> list? symbol? list?)]        ; a collection . member -> a collection
   [node-children  (-> any/c list?)]                ; all immediate children (for children()/descendants)
   [all-schema-fields (-> symbol? (listof any/c))]
+  [choice-members-for (-> symbol? symbol? (listof symbol?))] ; a choice element's member keys (value -> valueQuantity …)
   [resource-type-name? (-> symbol? boolean?)]))    ; a registered resource type's name
 ;; In-package callers require (submod "navigate.rkt" unchecked): the same names without their
 ;; contracts (the contracts are for callers outside the package).

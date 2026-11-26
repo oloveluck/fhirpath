@@ -433,8 +433,12 @@ broader (narrower) than, a coding of the argument in the same code system; nothi
 is empty or the service does not know a code; an error between different code systems. Without a
 service each is an error.}
 @item{@bold{Newer functions.} Of FHIRPath 3.0's additions, @tt{duration}, @tt{difference} and
-@tt{pathname} are not implemented, nor are the sort keywords @tt{asc} and @tt{desc} (write
-@fp{sort(-$this)} for descending); FHIR's
+@tt{pathname} are not implemented. Its Long literals (@fp{42L}), @fp{sort()} keys with
+@tt{asc}/@tt{desc} (@fp{name.sort(family desc, given.first())}) and instance selectors
+(@fp{Coding { system: 'http://x', code: gender }}, @fp{Period { : }}) are: a selector makes a value
+of a FHIR type of the process (or @tt{System.Quantity}), a choice element takes the member its
+value's type names, and the value is held to the type, so an element it lacks or several values
+for an element of one is an error. FHIR's
 @tt{htmlChecks}, @tt{elementDefinition}, @tt{slice}, @tt{checkModifiers} and @tt{weight} are not
 either. Using one is an error that names what it would need: @tt{slice() is not implemented
 here: FHIR's slice() needs the profile the resource was validated against}. The others are: @tt{lastIndexOf},
@@ -519,7 +523,7 @@ the @tt{fhir-examples} repository.}
 @item{Every expression in the repository's @tt{guide.md} is parsed and its worked examples are
 replayed through the command line, so what it shows is what you get.}
 @item{Expressions are read by a hand-written parser, for speed. The parser generated from the
-published grammar (fhirpath.g4) is kept as the reference: it reports every syntax error, and a test
+published grammar (FHIRPath 3.0.0's fhirpath.g4) is kept as the reference: it reports every syntax error, and a test
 requires both to read thousands of expressions (the suites, the core packages' search parameters
 and constraints, generated ones) to the same result.}]
 

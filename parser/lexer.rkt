@@ -2,7 +2,7 @@
 
 ;;; lexer.rkt — FHIRPath source text -> the token stream brag consumes.
 ;;;
-;;; Named tokens (NUMBER, STRING, BOOL, IDENTIFIER, DATE, DATETIME, TIME, EXTERNAL) carry a value;
+;;; Named tokens (NUMBER, LONG, STRING, BOOL, IDENTIFIER, DATE, DATETIME, TIME, EXTERNAL) carry a value;
 ;;; operators/keywords are emitted with their literal string as the token TYPE so the grammar's
 ;;; "and"/"."/"<=" literals match. NUMBER keeps its lexeme (decimal precision). Temporal literals
 ;;; are tagged (date-lit/datetime-lit/time-lit) at lex time so they survive as data. WS + // and
@@ -13,7 +13,7 @@
          (only-in fhir/diagnostic diagnostic loc raise-diagnostic exn:fail:diagnostic?)
          (prefix-in : br-parser-tools/lex-sre)
          racket/contract
-         (only-in "ast.rkt" date-lit datetime-lit time-lit))
+         (only-in "ast.rkt" date-lit datetime-lit time-lit long-lit))
 
 (provide (contract-out [tokenize (-> input-port? any/c)]))
 
@@ -54,14 +54,17 @@
    [(:: "@" dateformat "T" (:? (:: timeformat (:? tz)))) (token 'DATETIME (datetime-lit (substring lexeme 1)))]
    [(:: "@" dateformat) (token 'DATE (date-lit (substring lexeme 1)))]
 
-   ;; number (integer or decimal) — keep the lexeme for precision
+   ;; number (integer or decimal) — keep the lexeme for precision; a Long (3.0.0) ends in L
    [(:: (:+ numeric) (:? (:: "." (:+ numeric)))) (token 'NUMBER lexeme)]
+   [(:: (:+ numeric) "L") (token 'LONG (long-lit (substring lexeme 0 (sub1 (string-length lexeme)))))]
 
    ;; boolean before identifiers
    [(:or "true" "false") (token 'BOOL (string=? lexeme "true"))]
 
    ;; keyword operators / special vars before identifiers
    [(:or "implies" "and" "or" "xor" "in" "contains" "is" "as" "div" "mod") (token lexeme lexeme)]
+   ;; 3.0.0's keywords of sort() (`sort(family desc)`); each is also a name (grammar.rkt)
+   [(:or "sort" "asc" "desc") (token lexeme lexeme)]
    [(:or "$this" "$index" "$total") (token lexeme lexeme)]
 
    ;; external constants: %name | %`delim` | %'string'
@@ -77,7 +80,7 @@
 
    ;; multi-char operators before single-char
    [(:or "<=" ">=" "!=" "!~") (token lexeme lexeme)]
-   [(:or "." "[" "]" "(" ")" "," ";" "{" "}" "|" "&" "+" "-" "*" "/" "=" "<" ">" "~")
+   [(:or "." "[" "]" "(" ")" "," ";" "{" "}" ":" "|" "&" "+" "-" "*" "/" "=" "<" ">" "~")
     (token lexeme lexeme)]
 
    ;; text no rule above reads: one character, so it loses to every rule that reads one or more

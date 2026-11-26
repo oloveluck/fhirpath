@@ -12,7 +12,7 @@
 ;;; It only ever ACCEPTS. On any token it does not expect it answers #f, and parse.rkt hands the
 ;;; tokens to brag, whose answer — a tree, or the positioned error — is the one given. So a text
 ;;; this reader refuses is still read exactly as the grammar reads it (the few the grammar reads two
-;;; ways, `5 is`, a NUMBER with a keyword as its unit, are left to brag on purpose).
+;;; ways, `5 is` or a sort key `5 desc`, a NUMBER with a keyword as its unit, are left to brag on purpose).
 ;;;
 ;;; A Token is a brag token-struct whose type is a symbol: a named token (NUMBER STRING BOOL
 ;;; IDENTIFIER DATE DATETIME TIME EXTERNAL) or the text of an operator/keyword (`and`, `.`, `<=` …),
@@ -32,10 +32,14 @@
 ;;;   additive    : multiplicative (("+"|"-"|"&") multiplicative)*
 ;;;   multiplicative : unary (("*"|"/"|"div"|"mod") unary)*
 ;;;   unary       : ("+"|"-")? postfix
-;;;   postfix     : primary ("." (function-call | identifier | special-var) | "[" expr "]")*
-;;;   primary     : literal | function-call | identifier | special-var | EXTERNAL | "(" expr ")"
-;;;   identifier  : IDENTIFIER | "as" | "is" | "in" | "contains"
-;;;   literal     : NUMBER unit? | STRING | BOOL | DATE | DATETIME | TIME | "{" "}"
+;;;   postfix     : primary ("." (function-call | member | special-var) | "[" expr "]")*
+;;;   primary     : literal | instance-selector | function-call | member | special-var | EXTERNAL
+;;;               | "(" expr ")"
+;;;   function-call : "sort" "(" (expr ("asc"|"desc")? ("," …)*)? ")" | identifier "(" args? ")"
+;;;   member      : identifier | "sort"
+;;;   instance-selector : identifier ("." identifier)* "{" (":" | identifier ":" expr ("," …)*) "}"
+;;;   identifier  : IDENTIFIER | "as" | "is" | "in" | "contains" | "asc" | "desc"
+;;;   literal     : NUMBER unit? | LONG | STRING | BOOL | DATE | DATETIME | TIME | "{" "}"
 ;;;   unit        : IDENTIFIER | STRING        (a keyword identifier as a unit is left to brag)
 
 (require racket/contract
@@ -53,7 +57,7 @@
 ;; ---- the cursor ---------------------------------------------------------------------------------
 ;; kind : Token -> Symbol|String   a token's type: a named token's symbol, an operator's or
 ;; keyword's text (brag keeps both as symbols: `|and|`, `|.|`)
-(define named-kinds '(NUMBER STRING BOOL IDENTIFIER DATE DATETIME TIME EXTERNAL))
+(define named-kinds '(NUMBER LONG STRING BOOL IDENTIFIER DATE DATETIME TIME EXTERNAL))
 (define (kind t)
   (define k (token-struct-type t))
   (if (memq k named-kinds) k (symbol->string k)))
@@ -140,6 +144,11 @@
       [(".")
        (next! c)
        (cond [(at? c '("$this" "$index" "$total")) (loop (fp-invoke acc (string->symbol (kind (next! c)))))]
+             [(equal? (peek-kind c) "sort")
+              (next! c)
+              (if (equal? (peek-kind c) "(")
+                  (loop (fp-call acc 'sort (sort-keys c)))
+                  (loop (fp-invoke acc 'sort)))]
              [else (define name (identifier c))
                    (if (equal? (peek-kind c) "(")
                        (loop (fp-call acc name (arguments c)))
@@ -158,10 +167,51 @@
     [(equal? k "(") (next! c) (begin0 (expr c) (expect! c ")"))]
     [(member k '("$this" "$index" "$total")) (fp-var (string->symbol (kind (next! c))))]
     [(eq? k 'EXTERNAL) (fp-extern (token-struct-val (next! c)))]
+    [(equal? k "sort")
+     (next! c)
+     (if (equal? (peek-kind c) "(") (fp-call #f 'sort (sort-keys c)) (fp-invoke #f 'sort))]
+    [(and (identifier-kind? k) (selector-ahead? c)) (instance-selector c)]
     [(identifier-kind? k)
      (define name (identifier c))
      (if (equal? (peek-kind c) "(") (fp-call #f name (arguments c)) (fp-invoke #f name))]
     [else (literal c)]))
+
+;; selector-ahead? : Cursor -> Boolean   identifier ("." identifier)* then "{": an instance selector
+(define (selector-ahead? c)
+  (let loop ([j 1])
+    (define k (peek-kind c j))
+    (cond [(equal? k "{") #t]
+          [(and (equal? k ".") (identifier-kind? (peek-kind c (add1 j)))) (loop (+ j 2))]
+          [else #f])))
+
+;; instance-selector : qualified-name "{" (":" | element (", " element)*) "}"
+(define (instance-selector c)
+  (define type (type-spec c))
+  (expect! c "{")
+  (cond
+    [(equal? (peek-kind c) ":") (next! c) (expect! c "}") (fp-new type '())]
+    [else
+     (let loop ([elements '()])
+       (define name (identifier c))
+       (expect! c ":")
+       (define el (cons name (expr c)))
+       (cond [(equal? (peek-kind c) ",") (next! c) (loop (cons el elements))]
+             [else (expect! c "}") (fp-new type (reverse (cons el elements)))]))]))
+
+;; sort-keys : Cursor -> (listof AST)   "(" (key ("," key)*)? ")", a key `expr ("asc"|"desc")?`
+(define (sort-keys c)
+  (expect! c "(")
+  (define (key)
+    (define e (expr c))
+    (case (peek-kind c)
+      [("asc") (next! c) e]
+      [("desc") (next! c) (fp-desc e)]
+      [else e]))
+  (cond
+    [(equal? (peek-kind c) ")") (next! c) '()]
+    [else (let loop ([keys (list (key))])
+            (cond [(equal? (peek-kind c) ",") (next! c) (loop (cons (key) keys))]
+                  [else (expect! c ")") (reverse keys)]))]))
 
 ;; arguments : Cursor -> (listof AST)   "(" (expr ("," expr)*)? ")"
 (define (arguments c)
@@ -173,7 +223,7 @@
                   [else (expect! c ")") (reverse args)]))]))
 
 ;; identifier : Cursor -> Symbol   IDENTIFIER, or a keyword the grammar lets name a member or type
-(define (identifier-kind? k) (or (eq? k 'IDENTIFIER) (and (member k '("as" "is" "in" "contains")) #t)))
+(define (identifier-kind? k) (or (eq? k 'IDENTIFIER) (and (member k '("as" "is" "in" "contains" "asc" "desc")) #t)))
 (define (identifier c)
   (define t (next! c))
   (define v (token-struct-val t))
@@ -195,6 +245,7 @@
                  ;; `5 is Integer` and `5 is` (a unit named `is`): the grammar reads either; brag decides
                  (if (unit-keyword-certain? c) (fp-lit n) (refuse))
                  (fp-lit n))])]
+    [(LONG) (fp-lit v)]
     [(STRING) (fp-lit v)]
     [(BOOL) (fp-lit v)]
     [(DATE DATETIME TIME) (fp-lit v)]
@@ -208,7 +259,7 @@
 (define (unit-keyword-certain? c)
   (define after (peek-kind c 1))
   (and after
-       (or (identifier-kind? after) (memq after '(NUMBER STRING BOOL DATE DATETIME TIME EXTERNAL))
+       (or (identifier-kind? after) (memq after '(NUMBER LONG STRING BOOL DATE DATETIME TIME EXTERNAL))
            (member after '("(" "{" "$this" "$index" "$total" "+" "-")))
        #t))
 

@@ -11,7 +11,8 @@
          (only-in "parser/ast.rkt"
                   fp-lit fp-invoke fp-call fp-index fp-binop fp-unop fp-typeop fp-var fp-extern
                   dec-lit dec-lit-lexeme qty-lit qty-lit-number qty-lit-unit
-                  date-lit date-lit-str datetime-lit datetime-lit-str time-lit time-lit-str calendar-word?))
+                  date-lit date-lit-str datetime-lit datetime-lit-str time-lit time-lit-str calendar-word?
+                  fp-desc fp-new long-lit))
 
 (provide (contract-out [fhirpath->string (-> any/c string?)]))
 
@@ -28,6 +29,13 @@
     [(fp-typeop op o ty) (format "~a ~a ~a" (wrap o) op ty)]
     [(fp-var kind) (symbol->string kind)]
     [(fp-extern name) (format "%~a" name)]
+    [(fp-desc key) (format "~a desc" (fhirpath->string key))]
+    [(fp-new type '()) (format "~a { : }" type)]
+    [(fp-new type elements)
+     (format "~a { ~a }" type
+             (string-join (for/list ([el (in-list elements)])
+                            (format "~a: ~a" (car el) (fhirpath->string (cdr el))))
+                          ", "))]
     [_ (format "~a" ast)]))
 
 (define (wrap x) (if (fp-binop? x) (format "(~a)" (fhirpath->string x)) (fhirpath->string x)))
@@ -56,6 +64,7 @@
     [(date-lit s) (format "@~a" s)]
     [(datetime-lit s) (format "@~a" s)]
     [(time-lit s) (format "@T~a" s)]
+    [(long-lit d) (format "~aL" d)]
     [_ (format "~a" v)]))
 (define dec-lit? (lambda (x) (match x [(dec-lit _) #t] [_ #f])))
 ;; the FHIRPath string escapes, so a printed literal lexes back to the same value (`'\\d+'`)

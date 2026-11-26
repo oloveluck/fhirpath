@@ -107,16 +107,17 @@
 (parameterize ([current-pseudo-random-generator rng]) (random-seed 20261114))
 (define (pick xs) (list-ref xs (random (length xs) rng)))
 (define (chance n) (< (random 100 rng) n))
-(define names '("name" "given" "Patient" "value" "code" "as" "is" "in" "contains" "`div`" "_x1" "System"))
+(define names '("name" "given" "Patient" "value" "code" "as" "is" "in" "contains" "`div`" "_x1" "System"
+                "asc" "desc" "sort"))
 (define (gen-literal)
-  (pick (list "1" "0.50" "'text'" "'a\\'b'" "true" "false" "@2014-01-25" "@2014-01-25T14:30:00Z" "@T12:00"
+  (pick (list "1" "0.50" "42L" "'text'" "'a\\'b'" "true" "false" "@2014-01-25" "@2014-01-25T14:30:00Z" "@T12:00"
               "{}" "4 'mg'" "5 days" "1 year" "2.5 'cm'" "%context" "%`us-zip`" "$this" "$index" "$total")))
 (define binary-ops '("implies" "or" "xor" "and" "in" "contains" "=" "!=" "~" "!~" "<=" ">=" "<" ">" "|" "+" "-" "&" "*" "/" "div" "mod"))
 (define (gen-expr depth)
   (cond
     [(or (<= depth 0) (chance 25)) (if (chance 50) (gen-literal) (pick names))]
     [else
-     (case (random 9 rng)
+     (case (random 11 rng)
        [(0 1) (format "~a ~a ~a" (gen-expr (sub1 depth)) (pick binary-ops) (gen-expr (sub1 depth)))]
        [(2) (format "~a.~a" (gen-expr (sub1 depth)) (pick (append names '("$this" "$index"))))]
        [(3) (format "~a.~a(~a)" (gen-expr (sub1 depth)) (pick '("where" "exists" "as" "is" "ofType" "iif" "contains"))
@@ -125,9 +126,19 @@
        [(5) (format "(~a)" (gen-expr (sub1 depth)))]
        [(6) (format "~a~a" (pick '("-" "+")) (gen-expr (sub1 depth)))]
        [(7) (format "~a ~a ~a" (gen-expr (sub1 depth)) (pick '("is" "as")) (pick '("Quantity" "System.Integer" "FHIR.string" "is")))]
+       ;; 3.0.0: sort() keys with a direction, and instance selectors
+       [(8) (format "~a.sort(~a)" (gen-expr (sub1 depth))
+                    (string-join (for/list ([_ (in-range (random 3 rng))])
+                                   (format "~a~a" (gen-expr (sub1 depth)) (pick '("" " asc" " desc"))))
+                                 ", "))]
+       [(9) (format "~a { ~a }" (pick '("Coding" "FHIR.Coding" "Period" "System.Quantity" "as"))
+                    (if (chance 20) ":"
+                        (string-join (for/list ([_ (in-range (add1 (random 3 rng)))])
+                                       (format "~a: ~a" (pick names) (gen-expr (sub1 depth))))
+                                     ", ")))]
        [else (format "~a(~a)" (pick '("today" "now" "iif" "where")) (gen-expr (sub1 depth)))])]))
 ;; a token soup: the pieces of FHIRPath, in no particular order
-(define pieces (append binary-ops names '("." "(" ")" "[" "]" "," ";" "{" "}" "1" "'s'" "@2014" "%x" "$this" "5" "days" "'mg'" "is" "as")))
+(define pieces (append binary-ops names '("." "(" ")" "[" "]" "," ";" "{" "}" ":" "1" "7L" "'s'" "@2014" "%x" "$this" "5" "days" "'mg'" "is" "as")))
 (define (gen-soup) (string-join (for/list ([_ (in-range (add1 (random 7 rng)))]) (pick pieces)) " "))
 
 (define generated (compare (for/list ([_ (in-range 3000)]) (gen-expr 4))))
@@ -140,7 +151,7 @@
 ;; stand (`5 is`, `1 in`), the one form the grammar reads two ways
 (check-equal? (for/list ([s (in-list (remove-duplicates soup-texts))]
                          #:when (and (eq? (car (outcome parse-fhirpath-program/brag s)) 'ok) (not (descended? s)))
-                         #:unless (regexp-match? #px"(^|\\s)[0-9]+ (is|as|in|contains)(\\s|$)" s))
+                         #:unless (regexp-match? #px"(^|\\s)[0-9]+ (is|as|in|contains|asc|desc)(\\s|$)" s))
                 s)
               '()
               "descent leaves to brag only a number followed by a keyword")

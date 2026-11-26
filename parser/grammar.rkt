@@ -1,6 +1,10 @@
 #lang brag
 
-;; FHIRPath grammar (http://hl7.org/fhirpath/N1), translated to brag.
+;; FHIRPath grammar (FHIRPath 3.0.0, http://hl7.org/fhirpath/ — tests/vendor/fhirpath.g4), translated
+;; to brag. 3.0.0 added to N1: Long literals (`42L`), instance selectors (`Coding { code: 'x' }`,
+;; `Period { : }`), and sort() keys with `asc`/`desc`, those three words also being names. One
+;; difference of form: the g4 lets `sort` be any identifier (ANTLR takes its sort rule first where
+;; both read a text); here `sort` is a member's name only, so no text reads two ways.
 ;;
 ;; brag has no precedence directives, so precedence is a rule cascade — lowest (implies) at the
 ;; entry, highest (path/index) at the leaves. Punctuation is hidden with `/`; operator-keyword
@@ -29,23 +33,29 @@ invocation          : /"." (function-call | member | special-var)
 indexer             : /"[" fp-expr /"]"
 
 primary             : literal
+                    | instance-selector
                     | function-call
                     | member
                     | special-var
                     | external-constant
                     | /"(" fp-expr /")"
 
-function-call       : identifier /"(" arg-list? /")"
+function-call       : sort-call | identifier /"(" arg-list? /")"
+sort-call           : /"sort" /"(" (sort-key (/"," sort-key)*)? /")"
+sort-key            : fp-expr ("asc" | "desc")?
 arg-list            : fp-expr (/"," fp-expr)*
-member              : identifier
+member              : identifier | "sort"
+instance-selector   : qualified-name /"{" (/":" | element-selector (/"," element-selector)*) /"}"
+element-selector    : identifier /":" fp-expr
+qualified-name      : identifier (/"." identifier)*
 special-var         : "$this" | "$index" | "$total"
 external-constant   : EXTERNAL
 type-spec           : identifier (/"." identifier)*
 
-;; `as`/`is`/`in`/`contains` are also usable as identifiers (member/function/type names)
-identifier          : IDENTIFIER | "as" | "is" | "in" | "contains"
+;; `as`/`is`/`in`/`contains`/`asc`/`desc` are also usable as identifiers (member/function/type names)
+identifier          : IDENTIFIER | "as" | "is" | "in" | "contains" | "asc" | "desc"
 
-literal             : quantity | STRING | BOOL | DATE | DATETIME | TIME | "{" "}"
+literal             : quantity | LONG | STRING | BOOL | DATE | DATETIME | TIME | "{" "}"
 quantity            : NUMBER unit?
 unit                : identifier | STRING
 

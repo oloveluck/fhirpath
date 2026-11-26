@@ -20,7 +20,8 @@
                   fp-index? fp-index-target fp-index-idx fp-typeop-op
                   fp-binop? fp-binop-op fp-binop-lhs fp-binop-rhs fp-unop? fp-unop-operand
                   fp-typeop? fp-typeop-operand fp-typeop-type fp-var? fp-extern?
-                  fp-invoke fp-call fp-index fp-typeop)
+                  fp-invoke fp-call fp-index fp-typeop
+                  fp-desc? fp-desc-key fp-new? fp-new-type fp-new-elements)
          (only-in (submod "navigate.rkt" unchecked) all-schema-fields resource-type-name?)
          (only-in (submod "types.rkt" unchecked) fhir-ancestors primitive-codes registry-memo)
          (only-in fhir/model/registry type-schema-of type-registered? type-registry-generation)
@@ -99,7 +100,18 @@
        (infer operand (if union? (branch-type operand T) T)))
      #f]
     [(fp-call? ast) (infer-call ast T)]
+    [(fp-desc? ast) (infer (fp-desc-key ast) T)]
+    ;; an instance selector: its values are read from the input; the result is of the type named
+    [(fp-new? ast)
+     (for ([el (in-list (fp-new-elements ast))]) (infer (cdr el) T))
+     (selector-type (fp-new-type ast))]
     [else #f]))
+;; selector-type : Symbol -> Symbol|#f   the type an instance selector makes (`FHIR.Coding` -> Coding)
+(define (selector-type t)
+  (define s (symbol->string t))
+  (cond [(regexp-match #rx"^FHIR[.](.+)$" s) => (lambda (m) (string->symbol (cadr m)))]
+        [(regexp-match? #rx"^System[.]" s) #f]
+        [else t]))
 
 (define projection-fns '(where select all repeat repeatAll aggregate iif coalesce sort exists trace))
 (define (infer-call ast T)

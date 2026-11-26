@@ -9,7 +9,7 @@ This guide is for writing FHIRPath here: the language in brief, worked examples 
 the ways to run it, and what to do when something goes wrong.
 
 ## Official references
-- FHIRPath (normative): http://hl7.org/fhirpath/N1
+- FHIRPath 3.0.0 (the current release; its N1 parts normative): http://hl7.org/fhirpath/
 - FHIR's use of FHIRPath (additional functions, `resolve()`, `%resource`): https://hl7.org/fhir/fhirpath.html
 
 ## Cheat sheet
@@ -23,12 +23,18 @@ MedicationRequest.dosageInstruction.count()
 Observation.value.ofType(Quantity).value
 Encounter.period.start.toString().substring(0, 4)
 Observation.component.code.coding.where(system = %loinc).code
+Patient.name.sort(family desc, given.first())
+Patient.select(Coding { system: 'http://terminology.hl7.org/CodeSystem/v2-0203', code: gender })
+(42L + 1L).type().name
 ```
 Every value is a collection, and an empty collection is "nothing": a test on nothing is nothing,
 not false. `where`, `exists`, `all`, `select`, `first`, `count`, `ofType`, `is` and `as` are the
 workhorses. `value` is a choice, so read `value.ofType(Quantity)`, not `valueQuantity`. Strings use
 single quotes; dates and times start with `@` (`@2024-01-01`, `@T10:30`); a quantity is a number and
-a unit: a UCUM unit in quotes (`5 'mg'`), a calendar duration bare (`3 days`). `%loinc`, `%sct` and `%ucum` name the code systems; `%resource` is the
+a unit: a UCUM unit in quotes (`5 'mg'`), a calendar duration bare (`3 days`); a Long ends in `L`
+(`42L`). `sort()` takes keys, each `asc` (the default) or `desc`. `Type { element: value, … }`
+makes a value of a FHIR type (`Period { : }` is an empty one), held to the type: an element it
+lacks, or several values for an element of one, is an error. `%loinc`, `%sct` and `%ucum` name the code systems; `%resource` is the
 resource the expression started from.
 
 ## Worked examples
@@ -122,7 +128,8 @@ file. Resources are read with the workspace's FHIR version (R4 for 4.0.1).
   (true, false, or empty when the value set or a code system it rests on is not there), and so
   are `subsumes(code)` and `subsumedBy(code)` (empty when either side is empty or a code is not
   known; an error between code systems); without a service each is the same kind of error.
-  Beyond N1 these are implemented: `coalesce()`, `lastIndexOf()`, `sum()`, `min()`, `max()`,
+  Beyond N1 (FHIRPath 3.0.0) these are implemented: Long literals, `sort()` keys with `asc`/`desc`,
+  instance selectors, `coalesce()`, `lastIndexOf()`, `sum()`, `min()`, `max()`,
   `avg()`, `toLong()`, `yearOf()` … `millisecondOf()`, `timezoneOffsetOf()`, `dateOf()`, `timeOf()`,
   `repeatAll()`, `matches(re, flags)`.
 - Regular expressions are read as PCRE (a `]` outside a class is a literal); `replaceMatches` names

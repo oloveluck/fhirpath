@@ -365,3 +365,31 @@ gained that fourth field as an OPTIONAL constructor argument (terminology.rkt: t
 still builds and answers `subsumes()` with the same kind of error as no service.
 `tests/subsumes-test.rkt` loads fhir-tx by name over a small hierarchy. Floors unchanged: R5
 1044/1044, R4 932/934.
+
+## FHIRPath 3.0.0's language (2026-11-26)
+hl7.org was reachable from the session for once: FHIRPath 3.0.0 (http://hl7.org/fhirpath/, the
+current release) is the language now. Its grammar is vendored as tests/vendor/fhirpath.g4
+(SOURCE.txt; it was N1's) and differs from N1 in exactly these, each ported to grammar.rkt (the
+definition), descent.rkt (held to it), ast.rkt, eval.rkt, analyze.rkt and print.rkt:
+- **Long literals** `42L` (lexer `LONG` -> `long-lit`; an fp-long). Arithmetic followed: a Long
+  with an Integer or a Long is a Long, past 64 bits empty, `/` a Decimal (operators.rkt
+  `long-arith`); it was Decimal, and unary minus refused a Long.
+- **sort() keys with `asc`/`desc`** (`sort-call`, `sort-key`; `desc` lowers to `fp-desc`, `asc` to
+  the key itself; keys-cmp reads it, and still `-key`). `sort`, `asc`, `desc` are keywords that
+  are also names; one difference of form from the g4: `sort` is a member's name only, not any
+  identifier, so no text reads two ways in brag (the g4 relies on ANTLR's order). `5 desc` is
+  the old ambiguity (a number with a keyword as its unit), left to brag like `5 is`.
+- **Instance selectors** `Type { element: value, … }`, `Type { : }` (`fp-new`; selector.rkt): a
+  FHIR type of the tower (unqualified, or `FHIR.`), a primitive from its `value` by the registry's
+  constructor, or System.Quantity; a choice element takes the member its value's type names; the
+  object is FHIR JSON read by the strict reader, so an element the type lacks, a bad value or
+  several values for an element of one is an execution error; an empty value adds nothing; an
+  empty input answers empty and several items are an error, as the text says. The static pass
+  checks the element values and types the result.
+- `\"` as a string escape was already read.
+`tests/fhirpath3-test.rkt` holds the specification's own examples of the three; the descent test
+generates them too (0 disagreements over every corpus). FHIRPath 3.0.0's test archive is a subset of
+the vendored suites (682 of 935) and not well-formed XML, so it is not vendored. fml's walker
+(`fp-parts`, `fp-map`) knows the two nodes: a StructureMap's FHIRPath (JSON) is read by this
+parser, while a `.map` text's FHIRPath is fml's own grammar's (N1's, as FHIR R5's mapping language
+cites it). Floors unchanged: R5 1044/1044, R4 932/934, UCUM 573/573; tests 489 -> 528.

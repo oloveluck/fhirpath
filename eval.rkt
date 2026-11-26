@@ -19,7 +19,8 @@
          (only-in (submod "functions.rkt" unchecked) apply-function current-unresolved-references)
          (only-in (submod "decimal.rkt" unchecked) parse-decimal integer->decimal)
          (only-in (submod "quantity.rkt" unchecked) make-quantity)
-         (only-in (submod "temporal-ops.rkt" unchecked) parse-fp-date parse-fp-datetime parse-fp-time calendar-problem))
+         (only-in (submod "temporal-ops.rkt" unchecked) parse-fp-date parse-fp-datetime parse-fp-time calendar-problem)
+         (only-in "selector.rkt" new-instance))
 
 (provide (contract-out
           [eval-fhirpath (->* (any/c list?) (#:externals hash? #:strict? boolean?) list?)]
@@ -54,6 +55,18 @@
     [(fp-call target name args)
      (define subject (if target (fp-eval target coll e) coll))
      (apply-function name subject args e fp-eval coll)]
+    ;; an instance selector (3.0.0): "If the input collection contains multiple items, the
+    ;; evaluation … will end and signal an error … If the input collection is empty, the result is
+    ;; empty." Each element's value is evaluated against the input, in its own scope
+    [(fp-new type elements)
+     (cond [(null? coll) '()]
+           [(pair? (cdr coll))
+            (fp-error 'execution (format "~a { … } over ~a items: an instance is made from one" type (length coll)))]
+           [else
+            (new-instance type (for/list ([el (in-list elements)])
+                                 (cons (car el) (fp-eval (cdr el) coll (env-clone-vars e)))))])]
+    ;; `desc` is said of a sort() key, and only there (sort reads it)
+    [(fp-desc _) (fp-error 'semantic "desc qualifies a key of sort(), and only there")]
     [_ (fp-error 'semantic (format "cannot evaluate ~s" node))]))
 
 ;; and/or short-circuit; everything else is eager
@@ -94,6 +107,7 @@
   (cond
     [(eq? v 'empty) '()]
     [(or (exact-integer? v) (boolean? v) (string? v)) (list v)]
+    [(long-lit? v) (list (fp-long (string->number (long-lit-digits v))))]
     [(hash-ref literal-values v #f) => values]
     [else (define coll (read-literal v))
           (hash-set! literal-values v coll)

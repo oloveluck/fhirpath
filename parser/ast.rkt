@@ -20,6 +20,9 @@
          (struct-out fp-typeop)
          (struct-out fp-var)
          (struct-out fp-extern)
+         (struct-out fp-new)
+         (struct-out fp-desc)
+         (struct-out long-lit)
          (struct-out dec-lit)
          (struct-out qty-lit)
          (struct-out date-lit)
@@ -42,6 +45,11 @@
 (struct fp-typeop (op operand type)  #:prefab) ; op 'is|'as ; type symbol (qualified via ".")
 (struct fp-var    (kind)             #:prefab) ; '$this '$index '$total
 (struct fp-extern (name)             #:prefab) ; %name (string)
+;; FHIRPath 3.0.0's instance selector, `Coding { system: 'x', code: c }` or `Period { : }`:
+;; type a symbol as written (`FHIR.Coding`), elements a list of (cons element-name AST) in order
+(struct fp-new    (type elements)    #:prefab)
+;; a sort() key written with `desc` (3.0.0: `sort(family desc, given)`); `asc` is the key itself
+(struct fp-desc   (key)              #:prefab)
 
 ;; literal tags
 (struct dec-lit      (lexeme) #:prefab)  ; a decimal literal, precision preserved
@@ -49,6 +57,7 @@
 (struct date-lit     (str) #:prefab)
 (struct datetime-lit (str) #:prefab)
 (struct time-lit     (str) #:prefab)
+(struct long-lit     (digits) #:prefab)      ; a Long literal `42L` (3.0.0), its digits
 
 ;; the grammar's calendar duration words, singular and plural
 (define calendar-words
@@ -101,7 +110,10 @@
     [(list 'literal v) (fp-lit (lit-value v))]
     [(list 'member name) (fp-invoke #f (id->sym (unwrap-id name)))]
     [(list 'identifier x) (id->sym x)]
+    [(list 'function-call (list 'sort-call keys ...)) (fp-call #f 'sort (map lower-sort-key keys))]
     [(list 'function-call name args ...) (fp-call #f (id->sym (unwrap-id name)) (lower-args args))]
+    [(list 'instance-selector name elements ...)
+     (fp-new (lower-type-spec name) (map lower-element elements))]
     [(list 'special-var v) (fp-var (string->symbol v))]
     [(list 'external-constant name) (fp-extern name)]
 
@@ -124,9 +136,21 @@
     [(list 'postfix-tail (list 'invocation inner))
      (match inner
        [(list 'member name) (fp-invoke target (id->sym (unwrap-id name)))]
+       [(list 'function-call (list 'sort-call keys ...)) (fp-call target 'sort (map lower-sort-key keys))]
        [(list 'function-call name args ...) (fp-call target (id->sym (unwrap-id name)) (lower-args args))]
        [(list 'special-var v) (fp-invoke target (string->symbol v))])]
     [(list 'postfix-tail (list 'indexer idx)) (fp-index target (lower idx))]))
+
+;; a sort() key: the expression, `desc` making it an fp-desc (`asc`, the default, says nothing)
+(define (lower-sort-key k)
+  (match k
+    [(list 'sort-key e) (lower e)]
+    [(list 'sort-key e "asc") (lower e)]
+    [(list 'sort-key e "desc") (fp-desc (lower e))]))
+;; an instance selector's `element: value`
+(define (lower-element el)
+  (match el
+    [(list 'element-selector name e) (cons (id->sym (unwrap-id name)) (lower e))]))
 
 (define (lower-args rest)
   (match rest
@@ -142,7 +166,7 @@
 
 (define (lower-type-spec ts)
   (match ts
-    [(list 'type-spec parts ...)
+    [(list (or 'type-spec 'qualified-name) parts ...)
      (string->symbol
       (apply string-append
              (add-between (map (lambda (p) (symbol->string (id->sym (unwrap-id p))))
@@ -168,7 +192,7 @@
 
 (define (lit-value v)
   (cond
-    [(or (dec-lit? v) (qty-lit? v) (date-lit? v) (datetime-lit? v) (time-lit? v)) v]
+    [(or (dec-lit? v) (qty-lit? v) (date-lit? v) (datetime-lit? v) (time-lit? v) (long-lit? v)) v]
     [(string? v) v]
     [(boolean? v) v]
     [(number? v) v]

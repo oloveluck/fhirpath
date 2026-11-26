@@ -43,7 +43,7 @@
          (only-in (submod "regex.rkt" unchecked) regex-matches? regex-replace)
          (only-in (submod "operators.rkt" unchecked) apply-binop)
          (only-in "parser/ast.rkt" fp-invoke? fp-invoke-name fp-invoke-target
-                  fp-unop? fp-unop-op fp-unop-operand)
+                  fp-unop? fp-unop-op fp-unop-operand fp-desc? fp-desc-key)
          (only-in fhir/serialize/to-json node->jsexpr)
          (only-in fhir/operation parameters->inputs)
          (only-in net/base64 base64-encode base64-decode))
@@ -814,8 +814,9 @@
     (cond [(null? ks) 0]
           [else
            (define k (car ks))
-           (define desc? (and (fp-unop? k) (eq? (fp-unop-op k) '-)))
-           (define inner (if desc? (fp-unop-operand k) k))
+           ;; `key desc` (3.0.0), or the older `-key`
+           (define desc? (or (fp-desc? k) (and (fp-unop? k) (eq? (fp-unop-op k) '-))))
+           (define inner (cond [(fp-desc? k) (fp-desc-key k)] [desc? (fp-unop-operand k)] [else k]))
            (define kx (ev inner (list x) (env-with-item e x 0)))
            (define ky (ev inner (list y) (env-with-item e y 0)))
            ;; empty keys always sort first (not affected by ascending/descending)

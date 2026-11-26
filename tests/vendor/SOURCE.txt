@@ -1,0 +1,12 @@
+tests/vendor — what this package is held to, vendored as published.
+
+fhirpath.g4        FHIRPath 3.0.0's grammar, https://hl7.org/fhirpath/fhirpath.g4, retrieved
+                   2026-11-26 (it was N1's, http://hl7.org/fhirpath/N1, until then). parser/grammar.rkt
+                   is its translation to brag.
+tests-fhir-r4.xml  HL7's FHIRPath suites for FHIR R4 and R5, from the FHIR test cases
+tests-fhir-r5.xml  (github.com/FHIR/fhir-test-cases). FHIRPath 3.0.0's own archive
+                   (https://hl7.org/fhirpath/tests.zip, its r4/tests-fhir-r4.xml) is older: 682 tests,
+                   all but 5 of them among these 935, and not well-formed XML (line 760); it is not
+                   vendored. Its five are covered by tests/fhirpath3-test.rkt's checks or by the
+                   suites here under other names.
+ucum/              UCUM's functional tests (github.com/FHIR/Ucum-java).

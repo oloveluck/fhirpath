@@ -15,7 +15,7 @@
 (require racket/contract racket/list
          (submod "error.rkt" unchecked)
          (only-in (submod "value.rkt" unchecked) item->system as-decimal fp-quantity fp-quantity? fp-quantity-value
-                  fp-quantity-unit fp-quantity-calendar? fp-long fp-long?)
+                  fp-quantity-unit fp-quantity-calendar? fp-long fp-long? fp-long-v)
          (only-in (submod "decimal.rkt" unchecked) fp-decimal? integer->decimal decimal->exact decimal-add decimal-sub
                   decimal-mul decimal-div decimal-cmp fp-decimal fp-decimal-scale)
          (only-in (submod "temporal-ops.rkt" unchecked) value->moment moment? moment-compare moment->string moment-plus
@@ -54,6 +54,7 @@
     [(eq? op '-)
      (define s (item->system (one a)))
      (cond [(exact-integer? s) (list (- s))]
+           [(fp-long? s) (long-result (- (fp-long-v s)))]
            [(fp-decimal? s) (list (fp-decimal (- (decimal->exact s)) (fp-decimal-scale s)))]
            [(fp-quantity? s) (list (fp-quantity (fp-decimal (- (decimal->exact (fp-quantity-value s)))
                                                             (fp-decimal-scale (fp-quantity-value s)))
@@ -170,9 +171,26 @@
     [else (fp-error 'execution (format "operator ~a not defined for these operands" op))]))
 
 ;; numeric : Symbol SystemValue SystemValue Decimal Decimal -> Coll
-;; Integer op Integer stays Integer; otherwise Decimal. / div mod by zero answer empty.
+;; Integer op Integer stays Integer; a Long with an Integer or a Long is a Long (an Integer is
+;; promoted, FHIRPath 3.0.0); otherwise Decimal. / div mod by zero answer empty.
 (define (numeric op sa sb da db)
   (define int? (and (exact-integer? sa) (exact-integer? sb)))
+  (define (whole x) (cond [(exact-integer? x) x] [(fp-long? x) (fp-long-v x)] [else #f]))
+  (if (and (whole sa) (whole sb) (or (fp-long? sa) (fp-long? sb)) (not (eq? op '/)))
+      (long-arith op (whole sa) (whole sb))
+      (decimal-or-integer op sa sb da db int?)))
+;; long-arith : Symbol Integer Integer -> Coll   + - * div mod of Longs, a Long or empty
+(define (long-arith op a b)
+  (case op
+    [(+) (long-result (+ a b))]
+    [(-) (long-result (- a b))]
+    [(*) (long-result (* a b))]
+    [(div) (if (zero? b) '() (long-result (truncate/ a b)))]
+    [(mod) (if (zero? b) '() (long-result (- a (* (truncate/ a b) b))))]))
+;; long-result : Integer -> Coll   a Long, or empty past its 64-bit range (the result is not a Long)
+(define (long-result n)
+  (if (<= (- (expt 2 63)) n (sub1 (expt 2 63))) (list (fp-long n)) '()))
+(define (decimal-or-integer op sa sb da db int?)
   (case op
     [(+) (if int? (list (+ sa sb)) (list (decimal-add da db)))]
     [(-) (if int? (list (- sa sb)) (list (decimal-sub da db)))]
