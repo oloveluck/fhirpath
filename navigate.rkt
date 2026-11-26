@@ -10,7 +10,8 @@
 (require racket/contract
          racket/list
          (submod "error.rkt" unchecked)
-         (only-in fhir/model/node fhir? fhir-type fhir-fields)
+         (only-in fhir/model/node fhir? fhir-type)
+         (only-in (submod fhir/model/node unchecked) fhir-fields fhir-ref)
          (only-in fhir/model/base primitive-type? element-extension element-id)
          (only-in (submod "value.rkt" unchecked) typeinfo? typeinfo-namespace typeinfo-name)
          (only-in (submod "types.rkt" unchecked) fhir-ancestors registry-memo)
@@ -34,8 +35,7 @@
   (cond
     [(fhir? item)
      (define type (fhir-type item))
-     (define fields (fhir-fields item))
-     (define held (hash-ref fields name no-field))
+     (define held (fhir-ref item name no-field))
      (cond
        [(not (eq? held no-field)) (listify held)]
        ;; resource-root self-reference: `Patient.name` where the focus IS a Patient — or is a
@@ -51,7 +51,7 @@
         ;; value[x] choice: collect present expanded members whose choice-base is `name`.
         ;; Otherwise absent -> empty (runtime navigation is lenient; unknown-element detection is
         ;; a static concern handled by analyze.rkt against the known root type).
-        (append-map (lambda (m) (field-values fields m)) (choice-members-for type name))])]
+        (append-map (lambda (m) (field-values item m)) (choice-members-for type name))])]
     [(primitive-type? item)
      (case name
        [(extension) (element-extension item)]
@@ -63,14 +63,15 @@
 
 (define (listify v) (if (list? v) v (list v)))
 
-;; A node's fields are read from its table directly (`fhir-fields`, the struct's own accessor): a
-;; step is one lookup, where `fhir-has?` then `fhir-ref` were two, each through fhir/model/node's
-;; contract: those were about a quarter of evaluating the core constraints once the engine's own
-;; contracts were gone (CLAUDE.md, "Contracts at the boundary").
+;; A step asks a node for ONE field (`fhir-ref`, without its contract: one lookup, where
+;; `fhir-has?` then `fhir-ref` through fhir/model/node's contracts were about a quarter of
+;; evaluating the core constraints — CLAUDE.md, "Contracts at the boundary"). A node read
+;; leniently reads that field alone from its JSON (fhir/model/node, a Reader): a path that takes
+;; two of a resource's elements no longer reads them all.
 (define no-field (string->uninterned-symbol "no-field"))
-;; field-values : (hash Symbol -> Value) Symbol -> Coll   a field's values; none when it is absent
-(define (field-values fields name)
-  (define held (hash-ref fields name no-field))
+;; field-values : Node Symbol -> Coll   a field's values; none when it is absent
+(define (field-values item name)
+  (define held (fhir-ref item name no-field))
   (if (eq? held no-field) '() (listify held)))
 
 ;; all-schema-fields : Symbol -> (listof schema-field)
