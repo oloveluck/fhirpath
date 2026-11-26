@@ -25,6 +25,7 @@
   [node-children  (-> any/c list?)]                ; all immediate children (for children()/descendants)
   [all-schema-fields (-> symbol? (listof any/c))]
   [choice-members-for (-> symbol? symbol? (listof symbol?))] ; a choice element's member keys (value -> valueQuantity …)
+  [element-name-of (-> symbol? symbol? symbol?)]   ; a field key as FHIRPath names it (valueQuantity -> value)
   [resource-type-name? (-> symbol? boolean?)]))    ; a registered resource type's name
 ;; In-package callers require (submod "navigate.rkt" unchecked): the same names without their
 ;; contracts (the contracts are for callers outside the package).
@@ -119,6 +120,16 @@
 
 ;; choice-members-for : Symbol Symbol -> (listof Symbol)
 (define (choice-members-for type name) (hash-ref (choice-members type) name '()))
+
+;; element-name-of : Symbol Symbol -> Symbol   the name FHIRPath gives the element a node holds
+;; under a key: a choice member (`valueQuantity`) is its choice element (`value`), else the key
+(define element-name-of
+  (let ([by-type
+         (registry-memo
+          (lambda (type)
+            (for/hasheq ([f (in-list (all-schema-fields type))] #:when (schema-field-choice-base f))
+              (values (schema-field-name f) (schema-field-choice-base f)))))])
+    (lambda (type key) (hash-ref (by-type type) key key))))
 
 ;; all immediate child values of an item (nodes -> every present field value; primitives -> its
 ;; extensions). FHIRPath leaves the order of children() undefined; here it is the order the

@@ -21,20 +21,20 @@
 
 (require racket/contract racket/list racket/string racket/math racket/date
          (submod "error.rkt" unchecked)
-         (only-in fhir/model/node fhir? fhir-type fhir-ref)
+         (only-in fhir/model/node fhir? fhir-type fhir-ref fhir-fields)
          (only-in fhir/model/base primitive-type? element-extension element-id)
          (only-in (submod "value.rkt" unchecked) item->system item-fhir-type item-system-type value-less? fp-quantity fp-quantity?
                   fp-quantity-value fp-quantity-unit fp-quantity-calendar? fp-long fp-long? fp-long-v as-decimal)
          (only-in (submod "types.rkt" unchecked) item-is? item-of-type? known-type? type-info-of)
          (only-in (submod "value.rkt" unchecked) typeinfo)
-         (only-in (submod "navigate.rkt" unchecked) node-children navigate)
+         (only-in (submod "navigate.rkt" unchecked) node-children navigate element-name-of)
          (only-in (submod "equality.rkt" unchecked) member=? distinct=)
          (only-in (submod "decimal.rkt" unchecked) fp-decimal? parse-decimal integer->decimal decimal->exact
                   decimal->string decimal-round decimal-precision fp-decimal decimal-cmp)
          (only-in (submod "temporal-ops.rkt" unchecked) value->moment moment? moment-kind moment->string parse-fp-date calendar-problem
                   parse-fp-datetime parse-fp-time moment moment-year moment-month moment-day
                   moment-compare moment-prec moment-frac moment-boundary moment-hour moment-minute
-                  moment-second moment-tzmin)
+                  moment-second moment-tzmin ymd->jdn frac->ms)
          (only-in (submod "quantity.rkt" unchecked) make-quantity quantity->string calendar-unit? quantity-compare)
          (only-in (submod "environment.rkt" unchecked) env-with-item env-with-this env-with-total env-define-var
                   env-clone-vars env-var-bound? env-this env-root env-lookup-external)
@@ -90,9 +90,7 @@
           'slice "FHIR's slice() needs the profile the resource was validated against"
           'checkModifiers "FHIR's checkModifiers() needs the profiles in context"
           'weight "FHIR's weight() needs the ordinal values of a value set"
-          'duration "the current build's duration() is not implemented"
-          'difference "the current build's difference() is not implemented"
-          'pathname "the current build's pathname() is not implemented"))
+          ))
 
 ;; ---- reading the subject and the arguments --------------------------------------------------
 ;; sing : Coll -> Item | 'empty   the one item, or an execution error on several
@@ -773,6 +771,112 @@
                  (lambda (m) (and (moment-hour m)
                                   (moment 'time #f #f #f (moment-hour m) (moment-minute m) (moment-second m)
                                           (moment-frac m) #f (moment-prec m))))))
+
+;; ---- date and time intervals (FHIRPath 3.0.0, STU) -----------------------------------------
+;; duration(value, precision) is the number of WHOLE calendar periods from the input to the value,
+;; difference(value, precision) the number of BOUNDARIES crossed (weeks start on Sunday); both
+;; negative when the input is after the value, empty when either is empty or of less precision than
+;; asked, an error for several items, items of different kinds or a precision the kind does not
+;; take. A precision of hour or finer compares instants (timezones normalized when both have one).
+;; A Precision is one of the strings below; its rank is the moment precision it needs
+;; (1 year … 6 second, 7: a second with a fraction).
+(define interval-ranks
+  (hash "year" 1 "month" 2 "week" 3 "day" 3 "hour" 4 "minute" 5 "second" 6 "millisecond" 7))
+(define (interval-precisions kind)
+  (case kind
+    [(date) '("year" "month" "week" "day")]
+    [(time) '("hour" "minute" "second" "millisecond")]
+    [else '("year" "month" "week" "day" "hour" "minute" "second" "millisecond")]))
+;; moment-rank : Moment -> 1..7   its precision, a fraction of a second counting as millisecond
+(define (moment-rank m) (if (and (= (moment-prec m) 6) (moment-frac m)) 7 (moment-prec m)))
+;; instant-ms : Moment -> Integer   milliseconds from a fixed origin, at UTC when it has a zone
+(define (instant-ms m)
+  (define day (if (moment-year m) (ymd->jdn (moment-year m) (or (moment-month m) 1) (or (moment-day m) 1)) 0))
+  (+ (* day 86400000) (* 3600000 (or (moment-hour m) 0)) (* 60000 (or (moment-minute m) 0))
+     (* 1000 (or (moment-second m) 0)) (frac->ms (moment-frac m))
+     (- (* 60000 (or (moment-tzmin m) 0)))))
+;; day-number : Moment -> Integer   the day of a date or dateTime, as written
+(define (day-number m) (ymd->jdn (moment-year m) (or (moment-month m) 1) (or (moment-day m) 1)))
+;; time-of-day : Moment -> (listof Integer)   hour, minute, second, ms as written (0 when absent)
+(define (time-of-day m)
+  (list (or (moment-hour m) 0) (or (moment-minute m) 0) (or (moment-second m) 0) (frac->ms (moment-frac m))))
+;; lex< : (listof Integer) (listof Integer) -> Boolean
+(define (lex< a b) (cond [(null? a) #f] [(< (car a) (car b)) #t] [(> (car a) (car b)) #f] [else (lex< (cdr a) (cdr b))]))
+;; whole-periods : Moment Moment Precision -> Integer   duration from a to b, for a <= b
+(define (whole-periods a b p)
+  (define (months m) (+ (* 12 (moment-year m)) (or (moment-month m) 1)))
+  (case p
+    [("year") (- (- (moment-year b) (moment-year a))
+                 (if (lex< (cons (or (moment-month b) 1) (cons (or (moment-day b) 1) (time-of-day b)))
+                           (cons (or (moment-month a) 1) (cons (or (moment-day a) 1) (time-of-day a)))) 1 0))]
+    [("month") (- (- (months b) (months a))
+                  (if (lex< (cons (or (moment-day b) 1) (time-of-day b)) (cons (or (moment-day a) 1) (time-of-day a))) 1 0))]
+    [("day") (- (- (day-number b) (day-number a)) (if (lex< (time-of-day b) (time-of-day a)) 1 0))]
+    [("week") (quotient (whole-periods a b "day") 7)]
+    [else (quotient (- (instant-ms b) (instant-ms a))
+                    (case p [("hour") 3600000] [("minute") 60000] [("second") 1000] [else 1]))]))
+;; boundaries : Moment Moment Precision -> Integer   difference from a to b (signed)
+(define (boundaries a b p)
+  (define (months m) (+ (* 12 (moment-year m)) (or (moment-month m) 1)))
+  (define (week m) (floor (/ (+ (day-number m) 1) 7)))       ; the day number + 1 is a multiple of 7 on Sundays
+  (define (in unit m) (floor (/ (instant-ms m) unit)))
+  (case p
+    [("year") (- (moment-year b) (moment-year a))]
+    [("month") (- (months b) (months a))]
+    [("week") (- (week b) (week a))]
+    [("day") (- (day-number b) (day-number a))]
+    [else (define unit (case p [("hour") 3600000] [("minute") 60000] [("second") 1000] [else 1]))
+          (- (in unit b) (in unit a))]))
+;; interval-function : (Moment Moment Precision -> Integer) Boolean -> fn-proc
+(define (interval-function count signed?)
+  (lambda (s args e ev)
+    (define x (sing s))
+    (define y (sing (car args)))
+    (define p (str1 (cadr args)))
+    (cond
+      [(or (eq? x 'empty) (eq? y 'empty) (not p)) '()]
+      [else
+       (define a (value->moment (item->system x)))
+       (define b (value->moment (item->system y)))
+       (unless (and a b (eq? (moment-kind a) (moment-kind b)))
+         (fp-error 'execution "duration() and difference() take two values of one kind: Date, DateTime or Time"))
+       (unless (member p (interval-precisions (moment-kind a)))
+         (fp-error 'execution (format "a ~a takes the precision ~a, not '~a'" (moment-kind a)
+                                      (string-join (interval-precisions (moment-kind a)) ", ") p)))
+       (cond
+         [(or (< (moment-rank a) (hash-ref interval-ranks p)) (< (moment-rank b) (hash-ref interval-ranks p))) '()]
+         [signed? (list (count a b p))]
+         [(lex< (list (instant-ms b)) (list (instant-ms a))) (list (- (count b a p)))]
+         [else (list (count a b p))])])))
+(def! 'duration #:min 2 #:max 2 (interval-function whole-periods #f))
+(def! 'difference #:min 2 #:max 2 (interval-function boundaries #t))
+
+;; pathname([short]) : the direct path of each item within %rootResource, by element names and
+;; indexers (`Observation.component[0].code[0].coding[0]`); with short true an element that is no
+;; list in the resource has no indexer. An item computed rather than navigated to, or outside the
+;; resource, has none and is left out. Found by identity: the node a navigation reaches is the one
+;; the resource holds.
+(def! 'pathname #:min 0 #:max 1
+  (lambda (s args e ev)
+    (define short? (and (pair? args) (eq? (truthy (car args)) #t)))
+    (define root (root-resource e))
+    (if (not root)
+        '()
+        (for*/list ([x (in-list s)] [p (in-value (path-to root x short?))] #:when p) p))))
+;; path-to : Node Item Boolean -> String | #f
+(define (path-to root target short?)
+  (let search ([node root] [path (symbol->string (fhir-type root))])
+    (cond
+      [(eq? node target) path]
+      [(fhir? node)
+       (for*/or ([(k v) (in-hash (fhir-fields node))])
+         (define name (symbol->string (element-name-of (fhir-type node) k)))
+         (define items (if (list? v) v (list v)))
+         (for/or ([it (in-list items)] [i (in-naturals)])
+           (search it (if (and short? (not (list? v)))
+                          (format "~a.~a" path name)
+                          (format "~a.~a[~a]" path name i)))))]
+      [else #f])))
 
 ;; ---- the clock ------------------------------------------------------------------------------
 ;; p2 : Nat -> String   two digits

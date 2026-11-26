@@ -88,3 +88,43 @@
 ;; ---- written back as it was read --------------------------------------------------------------
 (for ([text (list "42L" "name.sort(family desc, given.first())" "Coding { system: 'x', code: gender }" "Period { : }")])
   (check-equal? (parse-fhirpath (fhirpath->string (parse-fhirpath text))) (parse-fhirpath text) text))
+
+;; ---- duration() and difference() (Date and Time Interval Functions, STU) ----------------------
+;; the specification's examples: duration counts whole periods, difference the boundaries crossed
+(check-equal? (texts "@2025-01-02.duration(@2025-01-07,'week')") '("0"))
+(check-equal? (texts "@2025-01-01.duration(@2025-09-01,'year')") '("0"))
+(check-equal? (texts "@2024-12-01.duration(@2025-09-01,'year')") '("0"))
+(check-equal? (texts "@2025-01-02.difference(@2025-01-07,'week')") '("1"))   ; weeks start on Sunday
+(check-equal? (texts "@2025-01-01.difference(@2025-09-01,'year')") '("0"))
+(check-equal? (texts "@2024-12-01.difference(@2025-09-01,'year')") '("1"))
+;; negative when the input is after the value; timezones normalized; times; fractions dropped
+(check-equal? (texts "@2025-09-01.duration(@2024-12-01,'month')") '("-9"))
+(check-equal? (texts "@2025-01-31.duration(@2025-02-28,'month')") '("0"))
+(check-equal? (texts "@2025-01-01T10:00:00Z.duration(@2025-01-01T08:30:00-02:00,'minute')") '("30"))
+(check-equal? (texts "@T10:00.duration(@T12:30,'hour')") '("2"))
+(check-equal? (texts "@T10:59.difference(@T11:00,'hour')") '("1"))
+(check-equal? (texts "@2025-01-01T10:00:00.000.duration(@2025-01-01T10:00:01.500,'millisecond')") '("1500"))
+;; empty: an empty side, or less precision than asked; an error: another kind or precision
+(check-equal? (texts "{}.duration(@2025-01-01,'day')") '())
+(check-equal? (texts "@2025-01.duration(@2025-09-01,'day')") '())
+(check-equal? (texts "@2025-01-01T10:00:00.duration(@2025-01-01T10:00:01.500,'millisecond')") '())
+(check-exn #rx"a date takes the precision" (lambda () (ev "@2025-01-01.duration(@2025-09-01,'hour')")))
+(check-exn #rx"two values of one kind" (lambda () (ev "@2025-01-01.duration(@T10:00,'day')")))
+
+;; ---- pathname() -------------------------------------------------------------------------------
+;; every step indexed, a choice element by its base name; short leaves out the indexer of an
+;; element that is no list; a computed value has no path
+(define observation
+  (ok-value (from-json (hasheq 'resourceType "Observation" 'status "final"
+                               'code (hasheq 'coding (list (hasheq 'code "a") (hasheq 'code "b")))
+                               'valueQuantity (hasheq 'value 5 'unit "mg"))
+                       #:lenient? #t)))
+(check-equal? (texts "Observation.code.coding.pathname()" (list observation))
+              '("Observation.code[0].coding[0]" "Observation.code[0].coding[1]"))
+(check-equal? (texts "Observation.code.coding.pathname(true)" (list observation))
+              '("Observation.code.coding[0]" "Observation.code.coding[1]"))
+(check-equal? (texts "Observation.value.unit.pathname()" (list observation)) '("Observation.value[0].unit[0]"))
+(check-equal? (texts "Patient.name.given.pathname()")
+              '("Patient.name[0].given[0]" "Patient.name[1].given[0]" "Patient.name[2].given[0]"))
+(check-equal? (texts "(1 | 2).pathname()") '())
+(check-equal? (texts "{}.pathname()") '())

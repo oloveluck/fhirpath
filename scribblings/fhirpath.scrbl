@@ -432,8 +432,11 @@ value set, or a code system it rests on, is not there. FHIR's @fp{subsumes(code)
 broader (narrower) than, a coding of the argument in the same code system; nothing when either side
 is empty or the service does not know a code; an error between different code systems. Without a
 service each is an error.}
-@item{@bold{Newer functions.} Of FHIRPath 3.0's additions, @tt{duration}, @tt{difference} and
-@tt{pathname} are not implemented. Its Long literals (@fp{42L}), @fp{sort()} keys with
+@item{@bold{Newer functions.} FHIRPath 3.0's additions are implemented:
+@fp{@"@"2024-12-01.duration(@"@"2025-09-01, 'year')} is 0 whole years and
+@fp{@"@"2024-12-01.difference(@"@"2025-09-01, 'year')} 1 boundary crossed (weeks start on Sunday;
+less precision than asked gives nothing), and @fp{Observation.code.coding.pathname()} gives each
+item's path, @tt{Observation.code[0].coding[0]} (a computed value has none). Its Long literals (@fp{42L}), @fp{sort()} keys with
 @tt{asc}/@tt{desc} (@fp{name.sort(family desc, given.first())}) and instance selectors
 (@fp{Coding { system: 'http://x', code: gender }}, @fp{Period { : }}) are: a selector makes a value
 of a FHIR type of the process (or @tt{System.Quantity}), a choice element takes the member its

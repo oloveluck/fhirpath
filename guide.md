@@ -122,8 +122,11 @@ file. Resources are read with the workspace's FHIR version (R4 for 4.0.1).
 - `` `mg` is no calendar duration ``: a bare word after a number is a calendar duration (`3 days`);
   a UCUM unit is quoted, `5 'mg'`.
 - `slice() is not implemented here`: FHIR's `htmlChecks()`,
-  `elementDefinition()`, `slice()`, `checkModifiers()`, `weight()` and the current build's
-  `duration()`, `difference()`, `pathname()` are not; the message says what each would need.
+  `elementDefinition()`, `slice()`, `checkModifiers()` and `weight()` are not; the message says
+  what each would need. FHIRPath 3.0's `duration(value, 'day')` (whole periods),
+  `difference(value, 'week')` (boundaries crossed, weeks from Sunday) and `pathname()`
+  (`Observation.code[0].coding[1]`; `pathname(true)` without the indexer of an element that is no
+  list) are.
   FHIR's `memberOf(valueset)` is answered by the terminology service given as `%terminologies`
   (true, false, or empty when the value set or a code system it rests on is not there), and so
   are `subsumes(code)` and `subsumedBy(code)` (empty when either side is empty or a code is not

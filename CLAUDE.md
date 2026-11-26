@@ -181,7 +181,7 @@ refactoring; every other difference is one of the changes below. Tests 299 -> 43
     `timezoneOffsetOf`, `dateOf`, `timeOf`, `repeatAll` (stopped past 100,000 items), the `i`/`m`
     flags of matches/matchesFull/replaceMatches, `combine`'s second argument; the static pass knows
     repeatAll/coalesce/lastIndexOf. FHIR's memberOf/subsumes/subsumedBy/htmlChecks/elementDefinition/
-    slice/checkModifiers/weight and duration/difference/pathname say they are not implemented and
+    slice/checkModifiers/weight say they are not implemented and
     what they need (`not-implemented`), instead of "unknown function".
 - **Quality**: `member=?`/`distinct=` in equality.rkt (operators.rkt's `dedup` and functions.rkt's
   `dedup=`/`member-of?` were two copies); equality.rkt's `as-dec` is value.rkt's `as-decimal`;
@@ -393,3 +393,17 @@ the vendored suites (682 of 935) and not well-formed XML, so it is not vendored.
 (`fp-parts`, `fp-map`) knows the two nodes: a StructureMap's FHIRPath (JSON) is read by this
 parser, while a `.map` text's FHIRPath is fml's own grammar's (N1's, as FHIR R5's mapping language
 cites it). Floors unchanged: R5 1044/1044, R4 932/934, UCUM 573/573; tests 489 -> 528.
+
+## duration(), difference(), pathname() (2026-11-26)
+FHIRPath 3.0.0's Date and Time Interval Functions and `pathname()` (functions.rkt; the
+specification's examples in `tests/fhirpath3-test.rkt`). `duration(value, precision)` counts whole
+calendar periods from the input to the value (`whole-periods`: a year or month not complete until
+the rest of the date and time is reached), `difference(value, precision)` the boundaries crossed
+(`boundaries`; weeks start on Sunday: the day number plus one over seven); both negative when the
+input is after the value, empty when either side is empty or less precise than asked (a
+millisecond needs a fraction), an error for two kinds or a precision the kind does not take; hour
+and finer compare instants, zones normalized (`instant-ms`). `pathname([short])` finds each item
+by identity from `%rootResource` (`path-to`): every step indexed, a choice element by its base
+name (`element-name-of`, navigate.rkt), with `short` no indexer on an element that is no list in
+the resource; a value computed, not navigated to, has no path and is left out. temporal-ops.rkt
+exports `ymd->jdn` and `frac->ms`. Floors unchanged.

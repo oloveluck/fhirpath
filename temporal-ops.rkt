@@ -28,7 +28,9 @@
   [moment->string    (-> moment? string?)]
   [moment-plus       (-> moment? exact-integer? string? moment?)]
   [moment-add-ms     (-> moment? exact-integer? moment?)]
-  [moment-boundary   (-> moment? exact-integer? boolean? (or/c moment? #f))]))
+  [moment-boundary   (-> moment? exact-integer? boolean? (or/c moment? #f))]
+  [ymd->jdn          (-> exact-integer? exact-integer? exact-integer? exact-integer?)]
+  [frac->ms          (-> (or/c string? #f) exact-integer?)]))
 ;; In-package callers require (submod "temporal-ops.rkt" unchecked): the same names without their
 ;; contracts (the contracts are for callers outside the package).
 (module+ unchecked (provide (struct-out moment)))
