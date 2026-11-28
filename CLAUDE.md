@@ -407,3 +407,13 @@ by identity from `%rootResource` (`path-to`): every step indexed, a choice eleme
 name (`element-name-of`, navigate.rkt), with `short` no indexer on an element that is no list in
 the resource; a value computed, not navigated to, has no path and is left out. temporal-ops.rkt
 exports `ymd->jdn` and `frac->ms`. Floors unchanged.
+
+## UCUM's tables read when compiled (2026-11-27)
+The first unit a process checked parsed `ucum/ucum-essence.xml` (200 KB) and loaded the XML library:
+90 ms of the first validation that met a Quantity. `ucum/essence.rkt` (`essence-of`) reads the
+essence into plain data (prefixes, base units, units, names; a code stated twice keeps its last
+statement, as the tables filled in document order did), and `ucum.rkt`'s `essence-literal` macro
+calls it when ucum.rkt is COMPILED (`register-external-file`, so an edit to the XML recompiles it);
+`load-essence!` fills the tables from that datum. Held to: the five tables, dumped by the old module
+(beside the new one) and the new, `equal?`; UCUM 573/573; the module's tests. The runtime no longer
+reads the XML, so a standalone build need not carry it.

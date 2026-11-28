@@ -8,14 +8,18 @@
 ;;; (`.`/`/`, integer exponents, `[bracketed]` atoms, `{annotations}`). Special (function) units
 ;;; (Cel, [degF], pH, …) are reported as non-canonicalizable (#f).
 
-(require racket/contract racket/list racket/string racket/runtime-path racket/lazy-require
+(require racket/contract racket/list racket/string
+         (for-syntax racket/base compiler/cm-accomplice "ucum/essence.rkt")
          (only-in fhir/suggest did-you-mean))
-;; The XML library is loaded when the essence is first read (the first unit to resolve), not when
-;; this module is: every program that evaluates FHIRPath loads this module, and loading `xml` was
-;; 60 ms of its start whether or not a unit was ever met.
-(lazy-require [xml (read-xml document-element element? element-name element-content
-                             element-attributes attribute-name attribute-value pcdata? pcdata-string
-                             entity? entity-text)])
+;; The essence (ucum-essence.xml) is read when this module is COMPILED, and its tables kept as a
+;; literal (ucum/essence.rkt): a process builds them from that datum when the first unit is met.
+;; Parsing the XML at run time, with the XML library's load, was 90 ms of the first validation
+;; that met a Quantity.
+(define-syntax (essence-literal stx)
+  (define-values (dir _n _d) (split-path (syntax-source stx)))
+  (define file (build-path dir "ucum" "ucum-essence.xml"))
+  (register-external-file (path->complete-path file))
+  (datum->syntax stx (list 'quote (essence-of file))))
 
 (provide
  (contract-out #:unprotected-submodule unchecked
@@ -35,7 +39,6 @@
 ;; In-package callers require (submod "ucum.rkt" unchecked): the same names without their
 ;; contracts (the contracts are for callers outside the package).
 
-(define-runtime-path essence-path "ucum/ucum-essence.xml")
 
 ;; dimension order: L T M A C Q F
 (define dim-index (hash "L" 0 "T" 1 "M" 2 "A" 3 "C" 4 "Q" 5 "F" 6))
@@ -51,57 +54,17 @@
 (define prefix-names (make-hash))  ; prefix code -> name  ("m" -> "milli")
 (define unit-names (make-hash))    ; unit/base code -> name ("m" -> "meter")
 
-(define (attr e name) (for/or ([a (element-attributes e)]) (and (eq? (attribute-name a) name) (attribute-value a))))
-(define (child-text e tag)
-  (for/or ([c (element-content e)] #:when (and (element? c) (eq? (element-name c) tag)))
-    c))
-
-;; the character data directly inside an element, resolving XML entities (`&#232;` in "ampère")
-(define (element-text e)
-  (apply string-append
-         (for/list ([c (in-list (element-content e))]
-                    #:when (or (pcdata? c) (entity? c)))
-           (cond [(pcdata? c) (pcdata-string c)]
-                 [else (let ([t (entity-text c)])
-                         (if (exact-integer? t) (string (integer->char t)) (format "&~a;" t)))]))))
-
-(define (parse-ucum-num s)
-  (define m (regexp-match #px"^([+-]?[0-9]*[.]?[0-9]+)(?:[eE]([+-]?[0-9]+))?$" (string-trim s)))
-  (and m (let* ([mant (list-ref m 1)] [ex (let ([e (list-ref m 2)]) (if e (string->number e) 0))]
-                [dm (regexp-match #px"^([+-]?)([0-9]*)(?:[.]([0-9]+))?$" mant)])
-           (and dm
-                (let* ([sign (if (equal? (list-ref dm 1) "-") -1 1)]
-                       [ip (list-ref dm 2)] [fp (or (list-ref dm 3) "")]
-                       [digits (string->number (string-append (if (equal? ip "") "0" ip) fp))]
-                       [scale (string-length fp)])
-                  (* sign digits (expt 10 (- ex scale))))))))
-
+;; load-essence! : -> void   the tables, from the Essence read when this module was compiled
 (define (load-essence!)
-  (define doc (call-with-input-file essence-path read-xml))
-  (let walk ([x (document-element doc)])
-    (when (element? x)
-      (case (element-name x)
-        [(prefix) (let ([code (attr x 'Code)] [v (child-text x 'value)])
-                    (when (and code v) (hash-set! prefixes code (parse-ucum-num (attr v 'value))))
-                    (let ([n (child-text x 'name)])
-                      (when (and code n) (hash-set! prefix-names code (element-text n)))))]
-        [(base-unit) (let ([code (attr x 'Code)] [d (attr x 'dim)])
-                       (when (and code d (hash-has-key? dim-index d))
-                         (let ([v (zero-dim)]) (vector-set! v (hash-ref dim-index d) 1)
-                           (hash-set! base-units code v)))
-                       (let ([n (child-text x 'name)])
-                         (when (and code n) (hash-set! unit-names code (element-text n)))))]
-        [(unit) (let ([code (attr x 'Code)] [v (child-text x 'value)])
-                  (let ([n (child-text x 'name)])
-                    (when (and code n) (hash-set! unit-names code (element-text n))))
-                  (when code
-                    (define unit-ref (and v (attr v 'Unit)))
-                    (define val (and v (attr v 'value)))
-                    (define num (and val (parse-ucum-num val)))
-                    (hash-set! units code
-                               (if (and unit-ref num) (cons num unit-ref) 'special))))]
-        [else (void)])
-      (for ([c (element-content x)]) (walk c)))))
+  (define e (essence-literal))
+  (for ([p (in-list (list-ref e 0))]) (hash-set! prefixes (car p) (cdr p)))
+  (for ([p (in-list (list-ref e 1))]) (hash-set! prefix-names (car p) (cdr p)))
+  (for ([p (in-list (list-ref e 2))] #:when (hash-has-key? dim-index (cdr p)))
+    (define v (zero-dim))
+    (vector-set! v (hash-ref dim-index (cdr p)) 1)
+    (hash-set! base-units (car p) v))
+  (for ([p (in-list (list-ref e 3))]) (hash-set! unit-names (car p) (cdr p)))
+  (for ([p (in-list (list-ref e 4))]) (hash-set! units (car p) (cdr p))))
 
 (define loaded? #f)
 (define (ensure-loaded!) (unless loaded? (load-essence!) (set! loaded? #t)))
